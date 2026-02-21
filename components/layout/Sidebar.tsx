@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useRoomStore } from "@/lib/store";
+import { signOut, useSession } from "next-auth/react";
 
 const navItems = [
   { label: "Chat", href: "/room" },
@@ -18,6 +19,7 @@ const navItems = [
 export default function Sidebar({ className }: { className?: string }) {
   const pathname = usePathname();
   const { room, profile, resetProfile } = useRoomStore();
+  const { data: session } = useSession();
 
   return (
     <aside className={`h-full w-72 flex-col gap-6 border-r border-border bg-card/70 p-6 ${className ?? "hidden lg:flex"}`}>
@@ -66,6 +68,11 @@ export default function Sidebar({ className }: { className?: string }) {
         })}
       </nav>
       <div className="mt-auto">
+        {session ? (
+          <Button variant="outline" className="mb-2 w-full" onClick={() => signOut()}>
+            Sign out
+          </Button>
+        ) : null}
         <Button variant="ghost" className="w-full" onClick={resetProfile}>
           Reset profile
         </Button>

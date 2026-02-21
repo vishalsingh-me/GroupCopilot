@@ -102,6 +102,10 @@ npm run dev
 - `GEMINI_API_KEY` (server-side) - required for live Gemini proxying
 - `MCP_SERVER_URL` (server-side) - required for real MCP tool calls
 - `NEXT_PUBLIC_APP_NAME` (optional) - overrides app title
+- `NEXTAUTH_URL` - base URL for Auth.js
+- `NEXTAUTH_SECRET` - secret for session signing
+- `GOOGLE_CLIENT_ID` - Google OAuth client ID
+- `GOOGLE_CLIENT_SECRET` - Google OAuth client secret
 
 Copy `.env.example` into `.env.local`.
 
