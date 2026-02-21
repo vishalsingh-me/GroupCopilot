@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { signIn, useSession } from "next-auth/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import UserMenu from "@/components/user-menu";
 import { useRoomStore } from "@/lib/store";
 import { createRoom, joinRoom } from "@/lib/room";
 import type { Role } from "@/lib/types";
@@ -16,7 +16,6 @@ const roles: Role[] = ["student", "ta", "instructor", "team member"];
 
 export default function MarketingPage() {
   const router = useRouter();
-  const { data: session } = useSession();
   const { setProfile, setRoom } = useRoomStore();
   const [open, setOpen] = useState<"create" | "join" | null>(null);
   const [name, setName] = useState("");
@@ -46,13 +45,7 @@ export default function MarketingPage() {
               <h1 className="text-3xl font-semibold tracking-tight">Collaborate smarter with a shared AI copilot.</h1>
             </div>
             <div className="flex items-center gap-3">
-              {session ? (
-                <Badge variant="accent">Signed in</Badge>
-              ) : (
-                <Button variant="outline" onClick={() => signIn("google")}>
-                  Sign in with Google
-                </Button>
-              )}
+              <UserMenu />
               <Badge variant="accent">Education Collaboration</Badge>
             </div>
           </header>
