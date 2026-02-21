@@ -72,8 +72,8 @@ Notes:
 - Full conflict mediation. MVP provides guidance and scripts.
 
 ## Tech Stack (suggested)
-- Frontend: React + TypeScript (Vite), TailwindCSS, shadcn/ui
-- LLM API: OpenAI (or any hackathon-approved model)
+- Frontend: Next.js (App Router) + TypeScript, TailwindCSS, shadcn/ui
+- LLM API: Gemini (via server-side proxy)
 - MCP Server: tool connectors (Notion, Google Calendar, and more)
 - Storage (MVP): localStorage
 - Optional later: Supabase or Firebase for persistence and auth
@@ -88,3 +88,28 @@ Notes:
 ### Install
 ```bash
 npm install
+```
+
+## Frontend app (Next.js App Router)
+
+### Run the web app
+```bash
+npm install
+npm run dev
+```
+
+### Environment variables
+- `GEMINI_API_KEY` (server-side) - required for live Gemini proxying
+- `MCP_SERVER_URL` (server-side) - required for real MCP tool calls
+- `NEXT_PUBLIC_APP_NAME` (optional) - overrides app title
+
+Copy `.env.example` into `.env.local`.
+
+### Mock mode vs real integrations
+- When `GEMINI_API_KEY` is missing, `/api/chat` returns mocked responses and the UI shows “Mock mode enabled.”
+- When `MCP_SERVER_URL` is missing, tool routes return mocked success (`/api/tools/*`).
+
+### MCP + Gemini wiring
+- `/api/chat` proxies to Gemini on the server (no client API keys).
+- `/api/tools/notion/create-task` and `/api/tools/calendar/create-event` proxy MCP tool calls.
+- Future personalization uses retrieval (RAG) with explicit consent; no training is performed.
