@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import UserMenu from "@/components/user-menu";
+import ThemeToggle from "@/components/layout/ThemeToggle";
 import { useRoomStore } from "@/lib/store";
 import { createRoom, joinRoom } from "@/lib/room";
 import type { Role } from "@/lib/types";
@@ -47,6 +48,7 @@ export default function MarketingPage() {
             <div className="flex items-center gap-3">
               <UserMenu />
               <Badge variant="accent">Education Collaboration</Badge>
+              <ThemeToggle />
             </div>
           </header>
 
