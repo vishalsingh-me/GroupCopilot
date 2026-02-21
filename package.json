@@ -4,15 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:worker": "tsx watch worker/index.ts",
+    "dev:worker": "tsx --env-file=.env.local watch worker/index.ts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx db/migrate.ts",
+    "db:migrate": "tsx --env-file=.env.local db/migrate.ts",
     "db:studio": "drizzle-kit studio",
-    "seed": "tsx scripts/seed.ts",
-    "worker": "tsx worker/index.ts"
+    "seed": "tsx --env-file=.env.local scripts/seed.ts",
+    "worker": "tsx --env-file=.env.local worker/index.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

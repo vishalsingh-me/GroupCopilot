@@ -2,7 +2,6 @@
  * Demo seed script — creates a full scenario for demo purposes.
  * Run: npm run seed
  */
-import "dotenv/config";
 import { db, pool } from "@/db";
 import {
   users,
