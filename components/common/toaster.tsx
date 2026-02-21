@@ -2,9 +2,9 @@
 
 import { ToastProvider as RadixToastProvider } from "@/components/ui/toast";
 import { ToastViewport, Toast, ToastTitle, ToastDescription } from "@/components/ui/toast";
-import { ToastProvider, useToast } from "@/components/common/use-toast";
+import { useToast } from "@/components/common/use-toast";
 
-function ToastRenderer() {
+export function ToastRenderer() {
   const { toasts, dismiss } = useToast();
 
   return (
@@ -17,13 +17,5 @@ function ToastRenderer() {
       ))}
       <ToastViewport />
     </RadixToastProvider>
-  );
-}
-
-export function Toaster() {
-  return (
-    <ToastProvider>
-      <ToastRenderer />
-    </ToastProvider>
   );
 }
