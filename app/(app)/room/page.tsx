@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import Sidebar from "@/components/layout/Sidebar";
@@ -25,16 +25,26 @@ const modeDescriptions: Record<Mode, string> = {
   general: "I will ask clarifying questions and move the plan forward."
 };
 
+function PanelParamReader() {
+  const searchParams = useSearchParams();
+  const { setPanelTab } = useRoomStore();
+  useEffect(() => {
+    const panel = searchParams.get("panel");
+    if (panel === "tickets" || panel === "meetings" || panel === "guide") {
+      setPanelTab(panel as "tickets" | "meetings" | "guide");
+    }
+  }, [searchParams, setPanelTab]);
+  return null;
+}
+
 export default function RoomPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { toast } = useToast();
   const {
     profile,
     room,
     messages,
     mode,
-    setPanelTab,
     setMode,
     addMessage,
     updateMessage,
@@ -50,13 +60,6 @@ export default function RoomPage() {
       router.push("/");
     }
   }, [profile, room, router]);
-
-  useEffect(() => {
-    const panel = searchParams.get("panel");
-    if (panel === "tickets" || panel === "meetings" || panel === "guide") {
-      setPanelTab(panel);
-    }
-  }, [searchParams, setPanelTab]);
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -129,6 +132,7 @@ export default function RoomPage() {
 
   return (
     <div className="flex h-screen flex-col bg-background">
+      <Suspense fallback={null}><PanelParamReader /></Suspense>
       <Topbar onOpenSidebar={() => setSidebarOpen(true)} onOpenPanel={() => setPanelOpen(true)} />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
