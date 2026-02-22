@@ -5,6 +5,7 @@ import { requireRoomMember } from "@/lib/auth-helpers";
 import {
   DEFAULT_MESSAGE_MODE,
   ensureRoomThread,
+  maybeAssignThreadTitleFromMessage,
   touchConversationThread,
 } from "@/lib/chat/threads";
 
@@ -90,6 +91,7 @@ export async function POST(
       }
     });
     await touchConversationThread(thread.id, message.createdAt);
+    await maybeAssignThreadTitleFromMessage(thread.id, message.content);
 
     return NextResponse.json({ threadId: thread.id, message }, { status: 201 });
   } catch (error) {

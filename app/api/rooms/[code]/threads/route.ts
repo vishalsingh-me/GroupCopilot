@@ -4,7 +4,9 @@ import { requireRoomMember } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import {
   createConversationThread,
+  deriveConversationTitleFromMessages,
   getOrCreateDefaultThread,
+  isPlaceholderThreadTitle,
 } from "@/lib/chat/threads";
 
 const CreateThreadSchema = z.object({
@@ -24,12 +26,37 @@ export async function GET(
     const threads = await prisma.conversationThread.findMany({
       where: { roomId: room.id },
       orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
+      include: {
+        messages: {
+          where: { senderType: "user" },
+          select: { content: true },
+          orderBy: { createdAt: "asc" },
+          take: 5,
+        },
+      },
     });
+
+    const titleBackfillUpdates: Array<Promise<unknown>> = [];
+    for (const thread of threads) {
+      if (!isPlaceholderThreadTitle(thread.title)) continue;
+      const derivedTitle = deriveConversationTitleFromMessages(thread.messages, thread.title);
+      if (derivedTitle === thread.title) continue;
+      titleBackfillUpdates.push(
+        prisma.conversationThread.update({
+          where: { id: thread.id },
+          data: { title: derivedTitle },
+        })
+      );
+    }
+
+    if (titleBackfillUpdates.length > 0) {
+      await Promise.allSettled(titleBackfillUpdates);
+    }
 
     return NextResponse.json({
       threads: threads.map((thread) => ({
         id: thread.id,
-        title: thread.title,
+        title: deriveConversationTitleFromMessages(thread.messages, thread.title),
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
         lastMessageAt: thread.lastMessageAt,
