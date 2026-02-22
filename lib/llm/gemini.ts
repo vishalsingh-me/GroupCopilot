@@ -174,6 +174,29 @@ export function classifyGeminiError(error: unknown): {
 } {
   const msg = error instanceof Error ? error.message : String(error);
   const lower = msg.toLowerCase();
+  const status = getHttpStatusFromError(error);
+
+  if (status === 404) {
+    return {
+      errorType: "MODEL_NOT_FOUND",
+      errorMessageSafe: `Model "${GEMINI_MODEL}" not found. Check GEMINI_MODEL env var.`,
+    };
+  }
+  if (status === 429) {
+    return { errorType: "QUOTA_EXCEEDED", errorMessageSafe: "API quota exceeded. Try again later." };
+  }
+  if (status === 401 || status === 403) {
+    return {
+      errorType: "AUTH_ERROR",
+      errorMessageSafe: "API key rejected. Check GEMINI_API_KEY value.",
+    };
+  }
+  if (status === 500 || status === 502 || status === 503 || status === 504) {
+    return {
+      errorType: "NETWORK_ERROR",
+      errorMessageSafe: `Gemini service is temporarily unavailable (${status}). Try again.`,
+    };
+  }
 
   if (lower.includes("not found") || lower.includes("404") || lower.includes("model")) {
     return {
@@ -197,7 +220,9 @@ export function classifyGeminiError(error: unknown): {
     lower.includes("network") ||
     lower.includes("enotfound") ||
     lower.includes("fetch failed") ||
-    lower.includes("timeout")
+    lower.includes("timeout") ||
+    lower.includes("service unavailable") ||
+    lower.includes("503")
   ) {
     return { errorType: "NETWORK_ERROR", errorMessageSafe: "Network error reaching Gemini API." };
   }
@@ -272,5 +297,19 @@ function getModelsToTry(): string[] {
 
 function isRetryableModelError(error: unknown): boolean {
   const { errorType } = classifyGeminiError(error);
-  return errorType === "QUOTA_EXCEEDED" || errorType === "MODEL_NOT_FOUND";
+  return (
+    errorType === "QUOTA_EXCEEDED" || errorType === "MODEL_NOT_FOUND" || errorType === "NETWORK_ERROR"
+  );
+}
+
+function getHttpStatusFromError(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const maybe = error as { status?: unknown; response?: { status?: unknown } };
+  const raw = maybe.status ?? maybe.response?.status;
+  if (typeof raw === "number") return raw;
+  if (typeof raw === "string") {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }
