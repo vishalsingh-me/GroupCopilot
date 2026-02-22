@@ -72,6 +72,7 @@ model User {
 
   rooms         RoomMember[]
   messages      Message[]
+  conversationThreads ConversationThread[]
   approvalVotes ApprovalVote[]
   auditLogs     AuditLog[]
   createdPlans  ProjectPlan[]
@@ -88,6 +89,7 @@ model Room {
   createdAt     DateTime @default(now())
 
   members          RoomMember[]
+  threads          ConversationThread[]
   messages         Message[]
   agentSessions    AgentSession[]
   auditLogs        AuditLog[]
@@ -115,6 +117,8 @@ model Message {
   id           String     @id @default(cuid())
   room         Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
   roomId       String
+  thread       ConversationThread? @relation(fields: [threadId], references: [id], onDelete: SetNull)
+  threadId     String?
   senderType   SenderType
   senderUser   User?      @relation(fields: [senderUserId], references: [id], onDelete: SetNull)
   senderUserId String?
@@ -122,6 +126,25 @@ model Message {
   mode         Mode
   metadata     Json?
   createdAt    DateTime   @default(now())
+
+  @@index([roomId, threadId, createdAt])
+}
+
+model ConversationThread {
+  id              String   @id @default(cuid())
+  room            Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId          String
+  title           String   @default("Conversation 1")
+  createdByUser   User     @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  createdByUserId String
+  summary         String?
+  summaryUpdatedAt DateTime?
+  lastMessageAt   DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  messages        Message[]
+
+  @@index([roomId, lastMessageAt])
 }
 
 // ─── Agent Session ────────────────────────────────────────────────────────────
