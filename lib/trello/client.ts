@@ -110,10 +110,11 @@ export async function createCard(
   listId: string,
   name: string,
   desc: string,
-  idMembers: string[] = [],
+  idMembers?: string[],
   due?: string
 ): Promise<TrelloCard> {
-  const payload: Record<string, unknown> = { idList: listId, name, desc, idMembers };
+  const payload: Record<string, unknown> = { idList: listId, name, desc };
+  if (idMembers && idMembers.length > 0) payload.idMembers = idMembers;
   if (due) payload.due = due;
   return trelloFetch<TrelloCard>(`/cards?${qs()}`, {
     method: "POST",

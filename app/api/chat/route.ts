@@ -31,7 +31,21 @@ export async function POST(request: Request) {
     // Load room detail and build member context
     const roomDetail = await prisma.room.findUniqueOrThrow({
       where: { id: room.id },
-      include: { members: { include: { user: true } } },
+      select: {
+        id: true,
+        projectGoal: true,
+        members: {
+          select: {
+            userId: true,
+            user: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     const memberIds = roomDetail.members.map((m) => m.userId);

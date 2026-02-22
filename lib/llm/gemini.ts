@@ -15,8 +15,8 @@ type HistoryMessage = {
 };
 
 // Read from env so the model can be overridden without a code change.
-// Default: gemini-2.0-flash (widely available on free keys)
-export const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
+// Default: gemini-3.0-flash (widely available on free keys)
+export const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.0-flash";
 
 export function getApiKey(): string | undefined {
   return process.env.GEMINI_API_KEY || undefined;

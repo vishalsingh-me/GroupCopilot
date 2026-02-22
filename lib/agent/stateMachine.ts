@@ -45,10 +45,10 @@ const TRANSITIONS: Record<AgentState, AgentState[]> = {
   WEEKLY_KICKOFF:   ["SKELETON_DRAFT"],
   SKELETON_DRAFT:   ["SKELETON_QA"],
   SKELETON_QA:      ["APPROVAL_GATE_1"],
-  APPROVAL_GATE_1:  ["PLANNING_MEETING"],
+  APPROVAL_GATE_1:  ["PLANNING_MEETING", "SKELETON_DRAFT"],
   PLANNING_MEETING: ["TASK_PROPOSALS"],
   TASK_PROPOSALS:   ["APPROVAL_GATE_2"],
-  APPROVAL_GATE_2:  ["TRELLO_PUBLISH"],
+  APPROVAL_GATE_2:  ["TRELLO_PUBLISH", "TASK_PROPOSALS"],
   TRELLO_PUBLISH:   ["MONITOR"],
   MONITOR:          ["WEEKLY_REVIEW"],
   WEEKLY_REVIEW:    ["IDLE"],
@@ -141,23 +141,38 @@ export async function castVote(
   userId: string,
   vote: "approve" | "request_change",
   comment?: string
-): Promise<{ resolved: boolean; status: ApprovalStatus }> {
-  await prisma.approvalVote.upsert({
+): Promise<{
+  resolved: boolean;
+  status: ApprovalStatus;
+  voteRecord: { id: string; vote: "approve" | "request_change"; requestId: string; userId: string; votedAt: Date };
+}> {
+  const votedAt = new Date();
+  const voteRecord = await prisma.approvalVote.upsert({
     where: { requestId_userId: { requestId, userId } },
-    update: { vote, comment },
-    create: { requestId, userId, vote, comment },
+    update: { vote, comment, votedAt },
+    create: { requestId, userId, vote, comment, votedAt },
+    select: { id: true, vote: true, requestId: true, userId: true, votedAt: true },
   });
 
   // Check if all active room members have voted approve
   const request = await prisma.approvalRequest.findUniqueOrThrow({
     where: { id: requestId },
-    include: {
-      votes: true,
-      session: { include: { room: { include: { members: true } } } },
+    select: {
+      votes: { select: { userId: true, vote: true } },
+      session: {
+        select: {
+          roomId: true,
+        },
+      },
     },
   });
 
-  const memberIds = request.session.room.members.map((m) => m.userId);
+  const roomMembers = await prisma.roomMember.findMany({
+    where: { roomId: request.session.roomId },
+    select: { userId: true },
+  });
+
+  const memberIds = roomMembers.map((m) => m.userId);
   const approveVotes = request.votes.filter((v) => v.vote === "approve").map((v) => v.userId);
   const hasChanges = request.votes.some((v) => v.vote === "request_change");
 
@@ -166,7 +181,7 @@ export async function castVote(
       where: { id: requestId },
       data: { status: "rejected", resolvedAt: new Date(), resolvedBy: userId },
     });
-    return { resolved: true, status: "rejected" };
+    return { resolved: true, status: "rejected", voteRecord };
   }
 
   const allApproved = memberIds.every((id) => approveVotes.includes(id));
@@ -175,10 +190,10 @@ export async function castVote(
       where: { id: requestId },
       data: { status: "approved", resolvedAt: new Date(), resolvedBy: userId },
     });
-    return { resolved: true, status: "approved" };
+    return { resolved: true, status: "approved", voteRecord };
   }
 
-  return { resolved: false, status: "pending" };
+  return { resolved: false, status: "pending", voteRecord };
 }
 
 /** Get the latest open approval request for a session (or null). */

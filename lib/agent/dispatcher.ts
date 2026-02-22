@@ -6,7 +6,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { generateFromPrompt } from "@/lib/llm/gemini";
-import { createCard, getBoardLists, isTrelloConfigured, TrelloApiError } from "@/lib/trello/client";
+import { createCard, isTrelloConfigured, TrelloApiError } from "@/lib/trello/client";
+import { TRELLO_MVP_BOARD_SHORT_LINK, TRELLO_MVP_PUBLISH_LIST_ID, TRELLO_MVP_PUBLISH_LIST_NAME } from "@/lib/trello/config";
 import { extractJSON, tryParseTasksJson } from "./parseUtils";
 import {
   AgentSession,
@@ -374,6 +375,7 @@ async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> 
   const FAILURE_TEXT = "Trello publish failed — check Trello connection in Settings.";
   const data = args.session.data as SessionData;
   const proposals = data.taskProposals ?? [];
+  const alreadyPublished = (data.publishedCardIds ?? []).filter(Boolean);
 
   if (proposals.length === 0) {
     // Nothing to publish — advance to monitor
@@ -381,8 +383,20 @@ async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> 
     return dispatch({ ...args, session: updated });
   }
 
-  // Load the room to get Trello board/list configuration
-  const room = await prisma.room.findUniqueOrThrow({ where: { id: args.roomId } });
+  if (alreadyPublished.length > 0) {
+    await writeAuditLog(args.roomId, "trello_publish_duplicate_attempt", {
+      cardIds: alreadyPublished,
+      weekNumber: args.session.weekNumber,
+    });
+    await advanceSession(args.session.id, "MONITOR", { publishedCardIds: alreadyPublished });
+    return {
+      text:
+        "Tasks were already published to Trello for this cycle. " +
+        "Skipping duplicate publish and moving to monitor.",
+      mockMode: false,
+      newState: "MONITOR",
+    };
+  }
 
   if (!isTrelloConfigured()) {
     await advanceSession(args.session.id, "MONITOR", { publishedCardIds: [] });
@@ -394,64 +408,6 @@ async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> 
     };
   }
 
-  if (!room.trelloBoardId) {
-    await advanceSession(args.session.id, "MONITOR", { publishedCardIds: [] });
-    await writeAuditLog(args.roomId, "trello_publish_failed", { reason: "MISSING_BOARD_ID" });
-    return {
-      text: FAILURE_TEXT,
-      mockMode: true,
-      newState: "MONITOR",
-    };
-  }
-
-  let boardLists: Array<{ id: string; name: string }> = [];
-  try {
-    boardLists = await getBoardLists(room.trelloBoardId);
-  } catch (error) {
-    await advanceSession(args.session.id, "MONITOR", { publishedCardIds: [] });
-    await writeAuditLog(args.roomId, "trello_publish_failed", {
-      reason: "LIST_FETCH_FAILED",
-      error: safeTrelloError(error),
-    });
-    return {
-      text: FAILURE_TEXT,
-      mockMode: true,
-      newState: "MONITOR",
-    };
-  }
-
-  if (boardLists.length === 0) {
-    await advanceSession(args.session.id, "MONITOR", { publishedCardIds: [] });
-    await writeAuditLog(args.roomId, "trello_publish_failed", { reason: "NO_OPEN_LISTS" });
-    return {
-      text: FAILURE_TEXT,
-      mockMode: true,
-      newState: "MONITOR",
-    };
-  }
-
-  let publishList = boardLists[0];
-  if (room.trelloListId) {
-    const storedList = boardLists.find((list) => list.id === room.trelloListId);
-    if (!storedList) {
-      await advanceSession(args.session.id, "MONITOR", { publishedCardIds: [] });
-      await writeAuditLog(args.roomId, "trello_publish_failed", {
-        reason: "INVALID_STORED_LIST_ID",
-        storedListId: room.trelloListId,
-      });
-      return {
-        text: FAILURE_TEXT,
-        mockMode: true,
-        newState: "MONITOR",
-      };
-    }
-    publishList = storedList;
-  } else {
-    publishList =
-      boardLists.find((list) => list.name.trim().toLowerCase() === "this week") ??
-      boardLists[0];
-  }
-
   // Build a Trello member ID map from RoomMember.trelloMemberId
   const members = await prisma.roomMember.findMany({ where: { roomId: args.roomId } });
   const trelloMemberMap: Record<string, string> = {};
@@ -459,7 +415,6 @@ async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> 
     if (m.trelloMemberId) trelloMemberMap[m.userId] = m.trelloMemberId;
   }
 
-  const listNameMap = Object.fromEntries(boardLists.map((list) => [list.id, list.name]));
   const approvedAtIso = new Date().toISOString();
 
   // Publish each task as a Trello card
@@ -469,12 +424,13 @@ async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> 
 
   for (const proposal of proposals) {
     try {
-      const idMembers = proposal.suggestedOwnerUserId
-        ? [trelloMemberMap[proposal.suggestedOwnerUserId]].filter(Boolean)
-        : [];
+      const mappedMemberId = proposal.suggestedOwnerUserId
+        ? trelloMemberMap[proposal.suggestedOwnerUserId]
+        : undefined;
+      const idMembers = mappedMemberId ? [mappedMemberId] : undefined;
       const due = normalizeDueDate(proposal.due);
       const card = await createCard(
-        publishList.id,
+        TRELLO_MVP_PUBLISH_LIST_ID,
         proposal.title,
         formatCardDescription(proposal, approvedAtIso),
         idMembers,
@@ -486,7 +442,7 @@ async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> 
         where: { trelloCardId: card.id },
         update: {
           title: card.name,
-          status: listNameMap[card.idList] ?? publishList.name,
+          status: TRELLO_MVP_PUBLISH_LIST_NAME,
           dueDate: card.due ? new Date(card.due) : null,
           lastSyncedAt: new Date(),
         },
@@ -494,7 +450,7 @@ async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> 
           roomId: args.roomId,
           trelloCardId: card.id,
           title: card.name,
-          status: listNameMap[card.idList] ?? publishList.name,
+          status: TRELLO_MVP_PUBLISH_LIST_NAME,
           dueDate: card.due ? new Date(card.due) : null,
         },
       });
@@ -514,8 +470,8 @@ async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> 
   if (failed.length > 0) {
     await writeAuditLog(args.roomId, "trello_publish_failed", {
       reason: "CARD_CREATE_FAILED",
-      boardId: room.trelloBoardId,
-      listId: publishList.id,
+      boardShortLink: TRELLO_MVP_BOARD_SHORT_LINK,
+      listId: TRELLO_MVP_PUBLISH_LIST_ID,
       publishedCount: publishedCardIds.length,
       failed,
       weekNumber: args.session.weekNumber,
@@ -523,7 +479,7 @@ async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> 
     return {
       text:
         `${FAILURE_TEXT}\n\n` +
-        `Published ${publishedCardIds.length}/${proposals.length} card(s) to **${publishList.name}**.\n\n` +
+        `Published ${publishedCardIds.length}/${proposals.length} card(s) to **${TRELLO_MVP_PUBLISH_LIST_NAME}**.\n\n` +
         `${lines.join("\n")}`,
       mockMode: true,
       newState: "MONITOR",
@@ -531,9 +487,9 @@ async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> 
   }
 
   await writeAuditLog(args.roomId, "trello_cards_published", {
-    boardId: room.trelloBoardId,
-    listId: publishList.id,
-    listName: publishList.name,
+    boardShortLink: TRELLO_MVP_BOARD_SHORT_LINK,
+    listId: TRELLO_MVP_PUBLISH_LIST_ID,
+    listName: TRELLO_MVP_PUBLISH_LIST_NAME,
     count: publishedCardIds.length,
     cardIds: publishedCardIds,
     weekNumber: args.session.weekNumber,
@@ -541,7 +497,7 @@ async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> 
 
   return {
     text:
-      `Published ${publishedCardIds.length}/${proposals.length} cards to Trello list **${publishList.name}**:\n\n` +
+      `Published ${publishedCardIds.length}/${proposals.length} cards to Trello list **${TRELLO_MVP_PUBLISH_LIST_NAME}**:\n\n` +
       `${lines.join("\n")}\n\n` +
       `I'll check in throughout the week if anything stalls.`,
     mockMode: false,
