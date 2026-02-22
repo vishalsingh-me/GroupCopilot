@@ -2,8 +2,8 @@
 
 import { PanelRightClose } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import TicketPanel from "@/components/tickets/TicketPanel";
-import MeetingsPanel from "@/components/meetings/MeetingsPanel";
+import PlanPanel from "@/components/plan/PlanPanel";
+import TrelloPanel from "@/components/trello/TrelloPanel";
 import GuidePanel from "@/components/guide/GuidePanel";
 import ActivityPanel from "@/components/activity/ActivityPanel";
 import { useRoomStore } from "@/lib/store";
@@ -29,17 +29,17 @@ export default function RightPanel({
         ) : null}
       </div>
       <Tabs value={panelTab} onValueChange={(value) => setPanelTab(value as any)} className="flex min-h-0 flex-1 flex-col">
-        <TabsList className="grid w-full grid-cols-2 gap-1 lg:grid-cols-4">
-          <TabsTrigger value="tickets">Tickets</TabsTrigger>
-          <TabsTrigger value="meetings">Meetings</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-4 gap-1">
+          <TabsTrigger value="plan">Plan</TabsTrigger>
+          <TabsTrigger value="trello">Trello</TabsTrigger>
           <TabsTrigger value="guide">Guide</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
-        <TabsContent value="tickets" className="no-scrollbar mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-          <TicketPanel />
+        <TabsContent value="plan" className="no-scrollbar mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+          <PlanPanel />
         </TabsContent>
-        <TabsContent value="meetings" className="no-scrollbar mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-          <MeetingsPanel />
+        <TabsContent value="trello" className="no-scrollbar mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+          <TrelloPanel />
         </TabsContent>
         <TabsContent value="guide" className="no-scrollbar mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
           <GuidePanel />

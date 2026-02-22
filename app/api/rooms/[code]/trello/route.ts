@@ -1,0 +1,233 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { requireRoomMember } from "@/lib/auth-helpers";
+import { prisma } from "@/lib/prisma";
+import {
+  getBoard,
+  getBoardLists,
+  getBoardMembers,
+  isTrelloConfigured,
+  registerWebhook,
+} from "@/lib/trello/client";
+import {
+  TRELLO_MVP_BOARD_ID,
+  TRELLO_MVP_BOARD_SHORT_LINK,
+  TRELLO_MVP_BOARD_URL,
+  TRELLO_MVP_PUBLISH_LIST_ID,
+} from "@/lib/trello/config";
+
+const ConnectSchema = z.object({
+  boardId: z.string().trim().min(1),
+  listId: z.string().trim().min(1).optional(),
+});
+
+/**
+ * GET /api/rooms/[code]/trello
+ * Returns the room's current Trello connection status and available lists.
+ */
+export async function GET(
+  req: Request,
+  ctx: { params: Promise<{ code: string }> }
+) {
+  try {
+    const { code } = await ctx.params;
+    const url = new URL(req.url);
+    const previewBoardId = url.searchParams.get("boardId")?.trim() || null;
+    const { room } = await requireRoomMember(code.toUpperCase());
+
+    if (!isTrelloConfigured()) {
+      return NextResponse.json({
+        configured: false,
+        trelloConfigured: false,
+        message: "TRELLO_API_KEY and TRELLO_TOKEN are not set.",
+      });
+    }
+
+    if (previewBoardId) {
+      try {
+        const board = await getBoard(previewBoardId);
+        const [lists, members] = await Promise.all([
+          getBoardLists(board.id),
+          getBoardMembers(board.id).catch(() => []),
+        ]);
+        return NextResponse.json({
+          configured: true,
+          trelloConfigured: true,
+          connected: false,
+          preview: true,
+          boardId: board.id,
+          boardShortLink: board.shortLink,
+          boardUrl: board.url,
+          lists,
+          members,
+        });
+      } catch {
+        return NextResponse.json(
+          { error: "Board not found or credentials cannot access it. Double-check the board ID." },
+          { status: 400 }
+        );
+      }
+    }
+
+    const effectiveBoardId = room.trelloBoardId ?? TRELLO_MVP_BOARD_ID;
+    const effectiveListId = room.trelloListId ?? TRELLO_MVP_PUBLISH_LIST_ID;
+
+    if (!room.trelloBoardId || room.trelloListId !== effectiveListId) {
+      await prisma.room.update({
+        where: { id: room.id },
+        data: {
+          trelloBoardId: effectiveBoardId,
+          trelloListId: effectiveListId,
+        },
+        select: { id: true },
+      });
+    }
+
+    const [lists, members, board] = await Promise.all([
+      getBoardLists(effectiveBoardId).catch(() => []),
+      getBoardMembers(effectiveBoardId).catch(() => []),
+      getBoard(effectiveBoardId).catch(() => null),
+    ]);
+
+    return NextResponse.json({
+      configured: true,
+      trelloConfigured: true,
+      connected: true,
+      boardId: effectiveBoardId,
+      boardShortLink: board?.shortLink ?? TRELLO_MVP_BOARD_SHORT_LINK,
+      boardUrl: board?.url ?? TRELLO_MVP_BOARD_URL,
+      listId: effectiveListId,
+      lists,
+      members,
+      mvpDirectConnection: true,
+    });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Unable to check Trello status" }, { status: 400 });
+  }
+}
+
+/**
+ * POST /api/rooms/[code]/trello
+ * Save the Trello board + list for this room and register a webhook.
+ * Body: { boardId, listId? }
+ */
+export async function POST(
+  req: Request,
+  ctx: { params: Promise<{ code: string }> }
+) {
+  try {
+    const { code } = await ctx.params;
+    const { room } = await requireRoomMember(code.toUpperCase());
+
+    if (!isTrelloConfigured()) {
+      return NextResponse.json(
+        { error: "TRELLO_API_KEY and TRELLO_TOKEN must be set before connecting a board." },
+        { status: 503 }
+      );
+    }
+
+    const body = ConnectSchema.parse(await req.json());
+
+    const board = await getBoard(body.boardId).catch(() => null);
+    if (!board) {
+      return NextResponse.json(
+        { error: "Board not found or credentials cannot access it. Double-check the board ID." },
+        { status: 400 }
+      );
+    }
+
+    // Verify the board is accessible and the listId belongs to it
+    let boardLists;
+    try {
+      boardLists = await getBoardLists(board.id);
+    } catch {
+      return NextResponse.json(
+        { error: "Board not found or credentials cannot access it. Double-check the board ID." },
+        { status: 400 }
+      );
+    }
+
+    let resolvedListId: string | null = null;
+    if (body.listId) {
+      const listIds = boardLists.map((l) => l.id);
+      if (!listIds.includes(body.listId)) {
+        return NextResponse.json(
+          {
+            error: `List ID "${body.listId}" does not belong to this board. Available lists: ${boardLists.map((l) => `${l.name} (${l.id})`).join(", ")}`,
+          },
+          { status: 400 }
+        );
+      }
+      resolvedListId = body.listId;
+    }
+
+    if (!resolvedListId && boardLists.length === 0) {
+      return NextResponse.json(
+        { error: "Board has no open lists. Create an open list in Trello first." },
+        { status: 400 }
+      );
+    }
+
+    // Register a webhook so Trello notifies us of card movements
+    const baseUrl = process.env.APP_BASE_URL ?? process.env.NEXTAUTH_URL ?? "";
+    let webhookId: string | undefined;
+    if (baseUrl) {
+      try {
+        const wh = await registerWebhook(board.id, `${baseUrl}/api/trello/webhook`);
+        webhookId = wh.id;
+      } catch (err) {
+        // Webhook registration failing is non-fatal — we still save the config
+        console.warn("Trello webhook registration failed:", err);
+      }
+    }
+
+    await prisma.room.update({
+      where: { id: room.id },
+      data: {
+        trelloBoardId: board.id,
+        trelloListId: resolvedListId,
+      },
+      select: { id: true },
+    });
+
+    return NextResponse.json({
+      ok: true,
+      boardId: board.id,
+      boardShortLink: board.shortLink,
+      boardUrl: board.url,
+      listId: resolvedListId,
+      lists: boardLists,
+      webhookId: webhookId ?? null,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: { code: "VALIDATION_ERROR", issues: error.issues } }, { status: 400 });
+    }
+    console.error(error);
+    return NextResponse.json({ error: "Unable to connect Trello board" }, { status: 400 });
+  }
+}
+
+/**
+ * DELETE /api/rooms/[code]/trello
+ * Disconnect Trello from this room.
+ */
+export async function DELETE(
+  _req: Request,
+  ctx: { params: Promise<{ code: string }> }
+) {
+  try {
+    const { code } = await ctx.params;
+    const { room } = await requireRoomMember(code.toUpperCase());
+    await prisma.room.update({
+      where: { id: room.id },
+      data: { trelloBoardId: null, trelloListId: null },
+      select: { id: true },
+    });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Unable to disconnect Trello" }, { status: 400 });
+  }
+}

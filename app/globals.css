@@ -68,4 +68,31 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+
+  .scrollbar-visible {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.45) hsl(var(--muted) / 0.35);
+    scrollbar-gutter: stable;
+  }
+
+  .scrollbar-visible::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .scrollbar-visible::-webkit-scrollbar-track {
+    background: hsl(var(--muted) / 0.35);
+    border-radius: 9999px;
+  }
+
+  .scrollbar-visible::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.45);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .scrollbar-visible::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.6);
+    background-clip: padding-box;
+  }
 }

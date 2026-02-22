@@ -15,7 +15,7 @@ export async function POST(req: Request) {
 
     const room = await prisma.room.findUnique({
       where: { code },
-      include: { members: true }
+      select: { id: true }
     });
     if (!room) {
       return NextResponse.json({ error: "Room not found" }, { status: 404 });
@@ -29,10 +29,45 @@ export async function POST(req: Request) {
 
     const updated = await prisma.room.findUnique({
       where: { id: room.id },
-      include: { members: true }
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        trelloBoardId: true,
+        members: {
+          select: {
+            role: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                image: true,
+              },
+            },
+          },
+        },
+      },
     });
 
-    return NextResponse.json({ room: updated });
+    return NextResponse.json({
+      room: updated
+        ? {
+            id: updated.id,
+            code: updated.code,
+            name: updated.name,
+            trelloBoardId: updated.trelloBoardId,
+            trelloBoardUrl: updated.trelloBoardId ? `https://trello.com/b/${updated.trelloBoardId}` : null,
+            members: updated.members.map((member) => ({
+              id: member.user.id,
+              name: member.user.name ?? member.user.email,
+              email: member.user.email,
+              role: member.role ?? undefined,
+              image: member.user.image ?? undefined,
+            })),
+          }
+        : null,
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Unable to join room" }, { status: 400 });

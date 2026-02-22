@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { generateAssistantReply } from "@/lib/llm/gemini";
+import { generatePlanCopilotReply } from "@/lib/llm/gemini";
 
 export async function GET() {
   if (process.env.NODE_ENV === "production") {
@@ -7,10 +7,17 @@ export async function GET() {
   }
 
   try {
-    const result = await generateAssistantReply({
-      mode: "brainstorm",
+    const result = await generatePlanCopilotReply({
       message: "We need help deciding an MVP for a student collaboration app.",
-      history: [{ role: "user", content: "Hey" }]
+      history: [{ role: "user", content: "Hey" }],
+      roomContext: {
+        roomCode: "DEV",
+        roomName: "Development Room",
+        members: ["Alex", "Sam"],
+        trelloBoardUrl: null,
+        projectPlan: null,
+        recentCards: [],
+      },
     });
 
     const textPreview = result.text.slice(0, 80);

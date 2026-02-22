@@ -11,9 +11,23 @@ export async function GET(
     const { room } = await requireRoomMember(code.toUpperCase());
     const detailed = await prisma.room.findUnique({
       where: { id: room.id },
-      include: {
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        trelloBoardId: true,
         members: {
-          include: { user: true }
+          select: {
+            role: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                image: true
+              }
+            }
+          }
         }
       }
     });
@@ -24,6 +38,10 @@ export async function GET(
           id: detailed.id,
           code: detailed.code,
           name: detailed.name,
+          trelloBoardId: detailed.trelloBoardId,
+          trelloBoardUrl: detailed.trelloBoardId
+            ? `https://trello.com/b/${detailed.trelloBoardId}`
+            : null,
           members: detailed.members.map((m) => ({
             id: m.user.id,
             name: m.user.name ?? m.user.email,

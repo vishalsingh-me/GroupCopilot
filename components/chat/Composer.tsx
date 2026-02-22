@@ -12,11 +12,11 @@ type ComposerProps = {
 };
 
 const presets = [
-  "Help us pick a project idea",
-  "Ask us questions to clarify requirements",
-  "Turn our plan into tickets",
-  "Schedule a meeting",
-  "We have a conflict, help us resolve it"
+  "Hi, can you help us plan this week?",
+  "We're behind schedule. What should we do next?",
+  "Can you review our plan and flag the biggest risks?",
+  "We disagree on priorities. Help us mediate neutrally.",
+  "Suggest a concise action plan for the next 3 days."
 ];
 
 export default function Composer({ onSend, disabled, showPresets = false }: ComposerProps) {
@@ -64,7 +64,7 @@ export default function Composer({ onSend, disabled, showPresets = false }: Comp
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder="Message Group Copilot..."
-          className="min-h-[92px] resize-none border-0 px-0 shadow-none focus-visible:ring-0"
+          className="min-h-[92px] resize-none border-0 px-0 font-chatSerif text-[16px] leading-7 tracking-normal shadow-none focus-visible:ring-0 sm:text-[17px]"
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();

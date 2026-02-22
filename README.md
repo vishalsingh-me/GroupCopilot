@@ -94,7 +94,7 @@ shared/
 | Database | PostgreSQL via Prisma |
 | ORM | Prisma |
 | Job queue | pg-boss (Postgres-backed, no Redis required) |
-| LLM | Gemini (`gemini-3-pro-preview` for text, `text-embedding-004` for embeddings) |
+| LLM | Gemini (`gemini-3-flash-preview` for text, `text-embedding-004` for embeddings) |
 | State (client) | Zustand |
 | Server state | TanStack Query |
 | Sentiment | AFINN via `sentiment` npm package (zero LLM cost per message) |
