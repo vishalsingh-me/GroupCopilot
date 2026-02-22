@@ -2,7 +2,7 @@
 
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, Download, Pencil } from "lucide-react";
+import { BarChart3, CalendarClock, Download, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,6 +37,28 @@ type CheckInDto = {
   id: string;
   milestoneId: string;
   scheduledAt: string;
+};
+
+type WorkloadMemberDto = {
+  userId: string;
+  name: string;
+  email: string;
+  isAdmin: boolean;
+  points: number;
+  lowCount: number;
+  medCount: number;
+  highCount: number;
+  pendingPoints: number;
+  pendingLowCount: number;
+  pendingMedCount: number;
+  pendingHighCount: number;
+  expectedPoints: number;
+};
+
+type WorkloadResponse = {
+  roomCode: string;
+  baselineStartAt: string | null;
+  members: WorkloadMemberDto[];
 };
 
 type PlanResponse = {
@@ -75,6 +97,15 @@ const STEP_LABELS: Record<PlannerStep, string> = {
   3: "Check-ins",
   4: "Review",
 };
+
+const WORKLOAD_BAR_PALETTE = [
+  { expected: "bg-cyan-100/95", completed: "bg-cyan-700" },
+  { expected: "bg-lime-100/95", completed: "bg-lime-700" },
+  { expected: "bg-fuchsia-100/95", completed: "bg-fuchsia-700" },
+  { expected: "bg-amber-100/95", completed: "bg-amber-700" },
+  { expected: "bg-rose-100/95", completed: "bg-rose-700" },
+  { expected: "bg-violet-100/95", completed: "bg-violet-700" },
+];
 
 function toDateTimeLocalInput(iso: string): string {
   const date = new Date(iso);
@@ -138,6 +169,24 @@ export default function ProjectPlannerHome({ roomCode, members, sessionEmail, on
     retry: false,
   });
 
+  const workloadQuery = useQuery({
+    queryKey: ["room-workload", roomCode],
+    queryFn: async () => {
+      const response = await fetch(`/api/rooms/${roomCode}/tasks/workload`, {
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.message ?? payload?.error ?? "Failed to load workload.");
+      }
+      return payload as WorkloadResponse;
+    },
+    enabled: Boolean(roomCode),
+    retry: false,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
   useEffect(() => {
     if (timezone === "UTC" && typeof window !== "undefined") {
       const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -149,6 +198,27 @@ export default function ProjectPlannerHome({ roomCode, members, sessionEmail, on
   const milestones = planQuery.data?.milestones ?? [];
   const checkins = planQuery.data?.checkins ?? [];
   const hasPlan = Boolean(plan);
+  const workloadMembers =
+    workloadQuery.data?.members ??
+    members.map((member) => ({
+      userId: member.id,
+      name: member.name,
+      email: member.email ?? "",
+      isAdmin: isAdminRole(member.role),
+      points: 0,
+      lowCount: 0,
+      medCount: 0,
+      highCount: 0,
+      pendingPoints: 0,
+      pendingLowCount: 0,
+      pendingMedCount: 0,
+      pendingHighCount: 0,
+      expectedPoints: 0,
+    }));
+  const maxExpectedPoints = useMemo(
+    () => workloadMembers.reduce((max, member) => Math.max(max, member.expectedPoints), 0),
+    [workloadMembers]
+  );
 
   const deadlineDate = useMemo(() => {
     if (!deadlineAt) return null;
@@ -352,6 +422,79 @@ export default function ProjectPlannerHome({ roomCode, members, sessionEmail, on
     savePlanMutation.mutate(payload);
   }
 
+  const workloadSection = (
+    <section className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center gap-2">
+        <BarChart3 className="h-4 w-4 text-muted-foreground" />
+        <p className="text-sm font-semibold">Team workload (this room)</p>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Completed-work points are room-scoped and reset when the latest member joins.
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+          Expected after pending tasks
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-full bg-slate-700" />
+          Completed workload
+        </span>
+      </div>
+      {workloadQuery.isLoading ? (
+        <p className="mt-3 text-sm text-muted-foreground">Loading workload visuals...</p>
+      ) : workloadQuery.isError ? (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Showing default workload (0) while history loads.
+        </p>
+      ) : null}
+      <div className="mt-3 space-y-2.5">
+        {workloadMembers.map((member, index) => {
+          const palette = WORKLOAD_BAR_PALETTE[index % WORKLOAD_BAR_PALETTE.length];
+          const expectedWidthPercent =
+            maxExpectedPoints > 0
+              ? Math.round((member.expectedPoints / maxExpectedPoints) * 100)
+              : 0;
+          const completedWidthPercent =
+            maxExpectedPoints > 0
+              ? Math.round((member.points / maxExpectedPoints) * 100)
+              : 0;
+          return (
+            <div key={member.userId} className="rounded-lg border border-border/70 px-3 py-2">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <p className="truncate text-sm font-medium">{member.name}</p>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">{member.points} done</span>
+                  {member.pendingPoints > 0 ? (
+                    <span className="rounded-full border border-border px-2 py-0.5">
+                      +{member.pendingPoints} pending
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted/70">
+                <div
+                  className={`absolute inset-y-0 left-0 rounded-full transition-all duration-700 ease-out ${palette.expected}`}
+                  style={{ width: `${expectedWidthPercent}%` }}
+                />
+                <div
+                  className={`absolute inset-y-0 left-0 rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.35)] transition-all duration-700 ease-out ${palette.completed}`}
+                  style={{ width: `${completedWidthPercent}%` }}
+                />
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Done: H{member.highCount} M{member.medCount} L{member.lowCount}
+                {member.pendingPoints > 0
+                  ? `  |  Pending: H${member.pendingHighCount} M${member.pendingMedCount} L${member.pendingLowCount}`
+                  : ""}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+
   if (planQuery.isLoading) {
     return (
       <div className="rounded-xl border border-border bg-card p-5">
@@ -373,16 +516,19 @@ export default function ProjectPlannerHome({ roomCode, members, sessionEmail, on
 
   if (!showForm && !hasPlan && !isAdmin) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5">
-        <p className="text-sm font-medium">Waiting for admin to set up the project plan.</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Once the plan is created, milestones and check-ins will appear here.
-        </p>
-        {onOpenChat ? (
-          <Button variant="outline" className="mt-3" onClick={onOpenChat}>
-            Open chat
-          </Button>
-        ) : null}
+      <div className="space-y-4">
+        <div className="rounded-xl border border-border bg-card p-5">
+          <p className="text-sm font-medium">Waiting for admin to set up the project plan.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Once the plan is created, milestones and check-ins will appear here.
+          </p>
+          {onOpenChat ? (
+            <Button variant="outline" className="mt-3" onClick={onOpenChat}>
+              Open chat
+            </Button>
+          ) : null}
+        </div>
+        {workloadSection}
       </div>
     );
   }
@@ -390,67 +536,71 @@ export default function ProjectPlannerHome({ roomCode, members, sessionEmail, on
   if (!showForm && hasPlan && plan) {
     const orderedMilestones = [...milestones].sort((a, b) => a.index - b.index);
     return (
-      <div className="rounded-xl border border-border bg-card p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase text-muted-foreground">Project Planner</p>
-            <h2 className="text-xl font-semibold">{plan.title}</h2>
-            <p className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap">{plan.description}</p>
+      <div className="space-y-4">
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase text-muted-foreground">Project Planner</p>
+              <h2 className="text-xl font-semibold">{plan.title}</h2>
+              <p className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap">{plan.description}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <a href={`/api/rooms/${roomCode}/calendar.ics`}>
+                <Button variant="outline" size="sm">
+                  <Download className="mr-1.5 h-4 w-4" />
+                  Download calendar (.ics)
+                </Button>
+              </a>
+              {isAdmin ? (
+                <Button size="sm" onClick={startEditPlan}>
+                  <Pencil className="mr-1.5 h-4 w-4" />
+                  Edit plan
+                </Button>
+              ) : null}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <a href={`/api/rooms/${roomCode}/calendar.ics`}>
-              <Button variant="outline" size="sm">
-                <Download className="mr-1.5 h-4 w-4" />
-                Download calendar (.ics)
-              </Button>
-            </a>
-            {isAdmin ? (
-              <Button size="sm" onClick={startEditPlan}>
-                <Pencil className="mr-1.5 h-4 w-4" />
-                Edit plan
-              </Button>
-            ) : null}
-          </div>
-        </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">Deadline</p>
-            <p className="text-sm font-medium">{formatDateTime(plan.deadlineAt)}</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Deadline</p>
+              <p className="text-sm font-medium">{formatDateTime(plan.deadlineAt)}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Cadence</p>
+              <p className="text-sm font-medium capitalize">{plan.cadence}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Next check-in</p>
+              <p className="text-sm font-medium">{nextCheckIn ? formatDateTime(nextCheckIn) : "No upcoming check-ins"}</p>
+            </div>
           </div>
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">Cadence</p>
-            <p className="text-sm font-medium capitalize">{plan.cadence}</p>
-          </div>
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">Next check-in</p>
-            <p className="text-sm font-medium">{nextCheckIn ? formatDateTime(nextCheckIn) : "No upcoming check-ins"}</p>
-          </div>
-        </div>
 
-        <div className="mt-4 space-y-2">
-          <p className="text-sm font-semibold">Milestones</p>
-          {orderedMilestones.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No milestones generated yet.</p>
-          ) : (
-            orderedMilestones.map((milestone) => (
-              <div key={milestone.id} className="rounded-lg border border-border px-3 py-2">
-                <p className="text-sm font-medium">
-                  {milestone.index}. {milestone.title}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatDateTime(milestone.startAt)} → {formatDateTime(milestone.dueAt)}
-                </p>
-              </div>
-            ))
-          )}
+          <div className="mt-4 space-y-2">
+            <p className="text-sm font-semibold">Milestones</p>
+            {orderedMilestones.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No milestones generated yet.</p>
+            ) : (
+              orderedMilestones.map((milestone) => (
+                <div key={milestone.id} className="rounded-lg border border-border px-3 py-2">
+                  <p className="text-sm font-medium">
+                    {milestone.index}. {milestone.title}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatDateTime(milestone.startAt)} → {formatDateTime(milestone.dueAt)}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
         </div>
+        {workloadSection}
       </div>
     );
   }
 
   return (
-    <form className="rounded-xl border border-border bg-card p-5" onSubmit={handleSavePlanSubmit}>
+    <div className="space-y-4">
+      <form className="rounded-xl border border-border bg-card p-5" onSubmit={handleSavePlanSubmit}>
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase text-muted-foreground">Project Planner</p>
@@ -584,46 +734,48 @@ export default function ProjectPlannerHome({ roomCode, members, sessionEmail, on
         ) : null}
       </div>
 
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" onClick={goBack} disabled={step === 1}>
-            Back
-          </Button>
-          <Button
-            type="button"
-            onClick={goNext}
-            disabled={
-              (step === 1 && !canAdvanceFromStep1()) ||
-              (step === 2 && milestoneCount.count === 0) ||
-              (step === 3 && (!checkInTime || !isValidTimeZone(timezone) || !preview)) ||
-              step === 4
-            }
-          >
-            Next
-          </Button>
-        </div>
-        <div className="flex items-center gap-2">
-          {hasPlan ? (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" onClick={goBack} disabled={step === 1}>
+              Back
+            </Button>
             <Button
               type="button"
-              variant="outline"
-              onClick={() => {
-                setEditing(false);
-                setStep(1);
-                resetFormForNewPlan();
-              }}
+              onClick={goNext}
+              disabled={
+                (step === 1 && !canAdvanceFromStep1()) ||
+                (step === 2 && milestoneCount.count === 0) ||
+                (step === 3 && (!checkInTime || !isValidTimeZone(timezone) || !preview)) ||
+                step === 4
+              }
             >
-              Cancel
+              Next
             </Button>
-          ) : null}
-          <Button
-            type="submit"
-            disabled={step !== 4 || savePlanMutation.isPending || !preview}
-          >
-            {savePlanMutation.isPending ? "Saving…" : "Save plan"}
-          </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            {hasPlan ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditing(false);
+                  setStep(1);
+                  resetFormForNewPlan();
+                }}
+              >
+                Cancel
+              </Button>
+            ) : null}
+            <Button
+              type="submit"
+              disabled={step !== 4 || savePlanMutation.isPending || !preview}
+            >
+              {savePlanMutation.isPending ? "Saving…" : "Save plan"}
+            </Button>
+          </div>
         </div>
-      </div>
-    </form>
+      </form>
+      {workloadSection}
+    </div>
   );
 }

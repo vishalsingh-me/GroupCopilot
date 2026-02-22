@@ -11,6 +11,7 @@ import { useSession } from "next-auth/react";
 import { useToast } from "@/components/common/use-toast";
 import { useState } from "react";
 import { TRELLO_MVP_BOARD_URL } from "@/lib/trello/config";
+import { isRoomAdminRole } from "@/lib/room-admin";
 
 type NavItem = {
   label: string;
@@ -33,10 +34,21 @@ export default function Sidebar({ className }: { className?: string }) {
   const chatPath = `${roomPath}/chat`;
   const panelBasePath = pathname === chatPath ? chatPath : roomPath;
   const activePanel = searchParams.get("panel");
+  const sessionEmail = session?.user?.email?.toLowerCase() ?? null;
+  const currentMember =
+    room?.members.find((member) => member.id === session?.user?.id) ??
+    room?.members.find(
+      (member) => {
+        if (!member.email || !sessionEmail) return false;
+        return member.email.toLowerCase() === sessionEmail;
+      }
+    );
+  const isAdmin = isRoomAdminRole(currentMember?.role);
 
   const navItems: NavItem[] = [
     { label: "Home", href: roomPath, panel: null },
     { label: "Chat", href: chatPath, panel: null },
+    ...(isAdmin ? [{ label: "Tasks", href: `${roomPath}/tasks` }] : []),
     {
       label: "Trello",
       href: TRELLO_MVP_BOARD_URL,
