@@ -1,9 +1,17 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Message, Mode, Room, Ticket, ToolAction, MeetingSlot } from "@/lib/types";
+import { normalizeMode } from "@/lib/types";
 import { nanoid } from "@/lib/uuid";
 
 type PanelTab = "tickets" | "meetings" | "guide" | "activity";
+const PANEL_TABS: readonly PanelTab[] = ["tickets", "meetings", "guide", "activity"] as const;
+
+function normalizePanelTab(value: unknown, fallback: PanelTab = "tickets"): PanelTab {
+  return typeof value === "string" && PANEL_TABS.includes(value as PanelTab)
+    ? (value as PanelTab)
+    : fallback;
+}
 
 type RoomState = {
   room?: Room;
@@ -54,8 +62,8 @@ export const useRoomStore = create<RoomState>()(
             message.id === id ? { ...message, content } : message
           )
         }),
-      setMode: (mode) => set({ mode }),
-      setPanelTab: (panelTab) => set({ panelTab }),
+      setMode: (mode) => set({ mode: normalizeMode(mode) }),
+      setPanelTab: (panelTab) => set({ panelTab: normalizePanelTab(panelTab) }),
       setTickets: (tickets) => set({ tickets }),
       updateTicket: (ticket) =>
         set({
@@ -73,6 +81,15 @@ export const useRoomStore = create<RoomState>()(
     }),
     {
       name: "group-copilot-store",
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState as Partial<RoomState>) ?? {};
+        return {
+          ...currentState,
+          ...persisted,
+          mode: normalizeMode(persisted.mode, currentState.mode),
+          panelTab: normalizePanelTab(persisted.panelTab, currentState.panelTab)
+        };
+      },
       partialize: (state) => ({
         room: state.room,
         messages: state.messages,

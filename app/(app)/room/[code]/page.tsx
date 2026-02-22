@@ -16,6 +16,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useToast } from "@/components/common/use-toast";
 import { useRoomStore, createSystemMessage } from "@/lib/store";
 import { createMessage } from "@/lib/chat";
+import { normalizeMode } from "@/lib/types";
 import type { Mode, Message, MeetingProposal } from "@/lib/types";
 
 const modeDescriptions: Record<Mode, string> = {
@@ -55,6 +56,7 @@ export default function RoomPage() {
     setMeetingSlots,
     toolActions
   } = useRoomStore();
+  const currentMode = normalizeMode(mode);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -72,6 +74,13 @@ export default function RoomPage() {
       signIn("google", { callbackUrl: `/room/${code}` });
     }
   }, [status, code]);
+
+  useEffect(() => {
+    const normalized = normalizeMode(mode);
+    if (normalized !== mode) {
+      setMode(normalized);
+    }
+  }, [mode, setMode]);
 
   const roomQuery = useQuery({
     queryKey: ["room", code],
@@ -104,7 +113,7 @@ export default function RoomPage() {
       const saveRes = await fetch(`/api/rooms/${code}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, mode })
+        body: JSON.stringify({ content, mode: currentMode })
       });
       if (!saveRes.ok) {
         throw new Error("Failed to save message");
@@ -112,7 +121,7 @@ export default function RoomPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomCode: code, message: content, mode })
+        body: JSON.stringify({ roomCode: code, message: content, mode: currentMode })
       });
       if (!res.ok) throw new Error("Assistant error");
       return res.json() as Promise<{
@@ -144,7 +153,7 @@ export default function RoomPage() {
       toast({ title: "Message is empty", description: "Write something before sending." });
       return;
     }
-    const userMessage = createMessage("user", session?.user?.name ?? "You", value, mode);
+    const userMessage = createMessage("user", session?.user?.name ?? "You", value, currentMode);
     addMessage(userMessage);
     await sendMutation.mutateAsync(value);
   };
@@ -182,8 +191,8 @@ export default function RoomPage() {
         <main className="flex flex-1 flex-col gap-4 overflow-hidden p-4 lg:p-6">
           <div className="rounded-2xl border border-border bg-card/70 p-4 shadow-soft">
             <div className="flex flex-col gap-2">
-              <ModeChips mode={mode} onChange={handleModeChange} />
-              <p className="text-sm text-muted-foreground">{modeDescriptions[mode]}</p>
+              <ModeChips mode={currentMode} onChange={handleModeChange} />
+              <p className="text-sm text-muted-foreground">{modeDescriptions[currentMode]}</p>
             </div>
           </div>
 

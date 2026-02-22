@@ -10,11 +10,12 @@ const UpdateSchema = z.object({
 
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } }
+  ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await ctx.params;
     const existing = await prisma.ticket.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: { room: true }
     });
     if (!existing) {
@@ -23,7 +24,7 @@ export async function PATCH(
     await requireRoomMember(existing.room.code);
     const body = UpdateSchema.parse(await req.json());
     const ticket = await prisma.ticket.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         status: body.status,
         ownerUserId: body.ownerUserId

@@ -10,10 +10,11 @@ const MessageCreateSchema = z.object({
 
 export async function GET(
   _req: Request,
-  { params }: { params: { code: string } }
+  ctx: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { room } = await requireRoomMember(params.code.toUpperCase());
+    const { code } = await ctx.params;
+    const { room } = await requireRoomMember(code.toUpperCase());
     const messages = await prisma.message.findMany({
       where: { roomId: room.id },
       orderBy: { createdAt: "asc" },
@@ -40,10 +41,11 @@ export async function GET(
 
 export async function POST(
   req: Request,
-  { params }: { params: { code: string } }
+  ctx: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { user, room } = await requireRoomMember(params.code.toUpperCase());
+    const { code } = await ctx.params;
+    const { user, room } = await requireRoomMember(code.toUpperCase());
     const body = MessageCreateSchema.parse(await req.json());
 
     const message = await prisma.message.create({
@@ -58,6 +60,17 @@ export async function POST(
 
     return NextResponse.json({ message }, { status: 201 });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "VALIDATION_ERROR",
+            issues: error.issues
+          }
+        },
+        { status: 400 }
+      );
+    }
     console.error(error);
     return NextResponse.json({ error: "Unable to save message" }, { status: 400 });
   }

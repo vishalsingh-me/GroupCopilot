@@ -14,10 +14,11 @@ const CreateTicketSchema = z.object({
 
 export async function GET(
   _req: Request,
-  { params }: { params: { code: string } }
+  ctx: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { room } = await requireRoomMember(params.code.toUpperCase());
+    const { code } = await ctx.params;
+    const { room } = await requireRoomMember(code.toUpperCase());
     const tickets = await prisma.ticket.findMany({
       where: { roomId: room.id },
       orderBy: { createdAt: "desc" }
@@ -31,10 +32,11 @@ export async function GET(
 
 export async function POST(
   req: Request,
-  { params }: { params: { code: string } }
+  ctx: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { room } = await requireRoomMember(params.code.toUpperCase());
+    const { code } = await ctx.params;
+    const { room } = await requireRoomMember(code.toUpperCase());
     const body = CreateTicketSchema.parse(await req.json());
 
     const ticket = await prisma.ticket.create({
