@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import {
   DEFAULT_MESSAGE_MODE,
   ensureRoomThread,
+  maybeAssignThreadTitleFromMessage,
   touchConversationThread,
 } from "@/lib/chat/threads";
 import { generatePlanCopilotReply, generateTextFromPrompt } from "@/lib/llm/gemini";
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
       },
     });
     await touchConversationThread(thread.id, userMessage.createdAt);
+    await maybeAssignThreadTitleFromMessage(thread.id, userMessage.content);
 
     const shouldUseConflictMediator = looksLikeConflictMessage(body.message);
 

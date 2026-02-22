@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { X, Plus } from "lucide-react";
+import { Plus, ShieldAlert, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
@@ -53,6 +53,7 @@ function llmBannerMessage(diag: LLMDiagnostic): string {
 }
 
 const BANNER_DISMISS_KEY = "group-copilot:diag-banner-dismissed";
+const PRIVACY_DISCLAIMER_KEY = "group-copilot:privacy-disclaimer-seen";
 
 export default function RoomChatPage() {
   const params = useParams<{ code: string }>();
@@ -69,10 +70,13 @@ export default function RoomChatPage() {
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [desktopPanelOpen, setDesktopPanelOpen] = useState(false);
   const [dismissedModel, setDismissedModel] = useState<string | null>(null);
+  const [showPrivacyDisclaimer, setShowPrivacyDisclaimer] = useState(false);
   const openDesktopPanel = useCallback(() => setDesktopPanelOpen(true), []);
 
   useEffect(() => {
     setDismissedModel(window.localStorage.getItem(BANNER_DISMISS_KEY));
+    const hasSeenDisclaimer = window.localStorage.getItem(PRIVACY_DISCLAIMER_KEY) === "1";
+    setShowPrivacyDisclaimer(!hasSeenDisclaimer);
   }, []);
 
   const diagQuery = useQuery<LLMDiagnostic>({
@@ -233,6 +237,9 @@ export default function RoomChatPage() {
       toast({ title: "No conversation selected", description: "Create or select a conversation first." });
       return;
     }
+    if (showPrivacyDisclaimer) {
+      dismissPrivacyDisclaimer();
+    }
     const userMessage = createMessage("user", session?.user?.name ?? "You", value);
     addMessage({ ...userMessage, threadId: activeThreadId });
     await sendMutation.mutateAsync(value);
@@ -266,6 +273,11 @@ export default function RoomChatPage() {
     if (!diagBannerKey) return;
     window.localStorage.setItem(BANNER_DISMISS_KEY, diagBannerKey);
     setDismissedModel(diagBannerKey);
+  };
+
+  const dismissPrivacyDisclaimer = () => {
+    window.localStorage.setItem(PRIVACY_DISCLAIMER_KEY, "1");
+    setShowPrivacyDisclaimer(false);
   };
 
   const listMessages = messages;
@@ -314,6 +326,9 @@ export default function RoomChatPage() {
                 </Button>
               </div>
               <div className="flex gap-2 overflow-x-auto pb-1">
+                {threads.length === 0 ? (
+                  <p className="py-2 text-sm text-muted-foreground">No conversations yet.</p>
+                ) : null}
                 {threads.map((thread) => (
                   <button
                     key={thread.id}
@@ -324,9 +339,10 @@ export default function RoomChatPage() {
                         ? "border-primary/50 bg-primary/10"
                         : "border-border/70 bg-background hover:border-primary/30 hover:bg-accent/40"
                     }`}
+                    title={thread.title}
                   >
                     <p className="truncate font-medium">{thread.title}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="truncate text-xs text-muted-foreground">
                       {new Date(thread.lastMessageAt).toLocaleString()}
                     </p>
                   </button>
@@ -352,6 +368,33 @@ export default function RoomChatPage() {
                 thinkingLabel="Plan Copilot is thinking..."
               />
             )}
+
+            {showPrivacyDisclaimer ? (
+              <div className="mb-2 rounded-xl border border-sky-200/70 bg-gradient-to-r from-sky-50/90 via-blue-50/80 to-cyan-50/70 px-3.5 py-2.5 shadow-sm dark:border-sky-800/60 dark:from-sky-950/35 dark:via-blue-950/30 dark:to-cyan-950/20">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-sky-300/70 bg-sky-100/90 text-sky-700 dark:border-sky-700/60 dark:bg-sky-900/50 dark:text-sky-300">
+                    <ShieldAlert className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">
+                      Privacy reminder
+                    </p>
+                    <p className="mt-0.5 text-xs leading-relaxed text-slate-700 dark:text-slate-200">
+                      Please avoid sharing personal or sensitive information in chat, such as phone numbers, SSN, addresses, passwords, or financial account details.
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 text-slate-500 hover:bg-sky-100/70 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-sky-900/40 dark:hover:text-white"
+                    onClick={dismissPrivacyDisclaimer}
+                    aria-label="Dismiss privacy notice"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ) : null}
 
             <Composer
               key={activeThreadId ?? "no-thread"}
