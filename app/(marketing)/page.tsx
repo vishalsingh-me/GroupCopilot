@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession, signIn } from "next-auth/react";
+import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +14,13 @@ import UserMenu from "@/components/user-menu";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import { useRoomStore } from "@/lib/store";
 
+type MyRoom = {
+  id: string;
+  code: string;
+  name?: string | null;
+  role?: string | null;
+};
+
 export default function MarketingPage() {
   const router = useRouter();
   const { data: session } = useSession();
@@ -21,6 +29,19 @@ export default function MarketingPage() {
   const [roomName, setRoomName] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const myRoomsQuery = useQuery({
+    queryKey: ["my-rooms"],
+    queryFn: async () => {
+      const response = await fetch("/api/rooms/mine");
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to load your rooms.");
+      }
+      return (payload?.rooms ?? []) as MyRoom[];
+    },
+    enabled: Boolean(session),
+  });
 
   const ensureSignedIn = async () => {
     if (!session) {
@@ -119,6 +140,49 @@ export default function MarketingPage() {
             </Card>
           </section>
 
+          {session ? (
+            <section className="rounded-2xl border border-border bg-card/80 p-6 shadow-soft">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">Your rooms</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Open an existing room or create a new one.
+                  </p>
+                </div>
+                <Button onClick={() => setOpen("create")}>Create room</Button>
+              </div>
+
+              {myRoomsQuery.isLoading ? (
+                <p className="text-sm text-muted-foreground">Loading rooms...</p>
+              ) : myRoomsQuery.isError ? (
+                <p className="text-sm text-destructive">
+                  {(myRoomsQuery.error as Error).message}
+                </p>
+              ) : (myRoomsQuery.data ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  You are not in any rooms yet. Create one or join by code.
+                </p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(myRoomsQuery.data ?? []).map((room) => (
+                    <button
+                      key={room.id}
+                      type="button"
+                      onClick={() => router.push(`/room/${room.code}`)}
+                      className="rounded-xl border border-border bg-background p-4 text-left transition hover:border-primary/40 hover:bg-accent/30"
+                    >
+                      <p className="text-sm font-semibold">{room.name?.trim() || "Untitled room"}</p>
+                      <p className="mt-1 font-mono text-xs text-muted-foreground">{room.code}</p>
+                      <p className="mt-2 text-xs text-muted-foreground capitalize">
+                        Role: {room.role ?? "member"}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
+
           <section className="grid gap-6 rounded-2xl border border-border bg-card/80 p-6 shadow-soft lg:grid-cols-3">
             <div>
               <h2 className="text-lg font-semibold">Proactive facilitation</h2>
@@ -127,9 +191,9 @@ export default function MarketingPage() {
               </p>
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Tickets + meetings</h2>
+              <h2 className="text-lg font-semibold">Planner + group chat</h2>
               <p className="text-sm text-muted-foreground">
-                Convert plans into tasks and suggest meeting times in one flow.
+                Keep plans and team communication in one shared workspace.
               </p>
             </div>
             <div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { X, Plus } from "lucide-react";
@@ -29,14 +29,16 @@ type LLMDiagnostic = {
 
 function PanelParamReader({ onPanelDetected }: { onPanelDetected?: () => void }) {
   const searchParams = useSearchParams();
-  const { setPanelTab } = useRoomStore();
+  const panel = searchParams.get("panel");
+  const { panelTab, setPanelTab } = useRoomStore();
   useEffect(() => {
-    const panel = searchParams.get("panel");
     if (panel === "plan" || panel === "trello" || panel === "guide" || panel === "activity") {
-      setPanelTab(panel);
+      if (panel !== panelTab) {
+        setPanelTab(panel);
+      }
       onPanelDetected?.();
     }
-  }, [searchParams, setPanelTab, onPanelDetected]);
+  }, [panel, panelTab, setPanelTab, onPanelDetected]);
   return null;
 }
 
@@ -57,7 +59,6 @@ export default function RoomChatPage() {
   const code = params.code;
   const router = useRouter();
   const searchParams = useSearchParams();
-  const searchParamsString = searchParams.toString();
   const threadParam = searchParams.get("thread");
   const { data: session, status } = useSession();
   const { toast } = useToast();
@@ -68,6 +69,7 @@ export default function RoomChatPage() {
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [desktopPanelOpen, setDesktopPanelOpen] = useState(false);
   const [dismissedModel, setDismissedModel] = useState<string | null>(null);
+  const openDesktopPanel = useCallback(() => setDesktopPanelOpen(true), []);
 
   useEffect(() => {
     setDismissedModel(window.localStorage.getItem(BANNER_DISMISS_KEY));
@@ -112,21 +114,25 @@ export default function RoomChatPage() {
     enabled: status === "authenticated",
   });
 
+  const threads = threadsQuery.data ?? [];
+
   const activeThreadId = useMemo(() => {
-    const threads = threadsQuery.data ?? [];
-    if (threads.length === 0) return null;
-    const exists = threadParam && threads.some((thread) => thread.id === threadParam);
-    if (exists) return threadParam;
+    if (threadParam && threads.some((thread) => thread.id === threadParam)) {
+      return threadParam;
+    }
     return threads[0]?.id ?? null;
-  }, [threadParam, threadsQuery.data]);
+  }, [threadParam, threads]);
 
   useEffect(() => {
-    if (!activeThreadId) return;
-    if (threadParam === activeThreadId) return;
-    const nextParams = new URLSearchParams(searchParamsString);
+    if (!activeThreadId || threadParam === activeThreadId) return;
+    const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.set("thread", activeThreadId);
     router.replace(`/room/${code}/chat?${nextParams.toString()}`);
-  }, [activeThreadId, threadParam, searchParamsString, router, code]);
+  }, [activeThreadId, code, router, searchParams, threadParam]);
+
+  useEffect(() => {
+    setMessages([]);
+  }, [activeThreadId, setMessages]);
 
   const messagesQuery = useQuery({
     queryKey: ["messages", code, activeThreadId],
@@ -195,11 +201,19 @@ export default function RoomChatPage() {
       return payload.thread as ConversationThread;
     },
     onSuccess: (thread) => {
-      queryClient.invalidateQueries({ queryKey: ["threads", code] });
-      const nextParams = new URLSearchParams(searchParamsString);
+      queryClient.cancelQueries({ queryKey: ["messages", code] });
+      queryClient.setQueryData(["messages", code, thread.id], []);
+      queryClient.setQueryData<ConversationThread[]>(["threads", code], (current) => {
+        const currentList = current ?? [];
+        if (currentList.some((existing) => existing.id === thread.id)) {
+          return currentList;
+        }
+        return [thread, ...currentList];
+      });
+      const nextParams = new URLSearchParams(searchParams.toString());
       nextParams.set("thread", thread.id);
-      router.push(`/room/${code}/chat?${nextParams.toString()}`);
-      setMessages([]);
+      router.replace(`/room/${code}/chat?${nextParams.toString()}`);
+      queryClient.invalidateQueries({ queryKey: ["threads", code] });
     },
     onError: (error) => {
       toast({
@@ -225,10 +239,9 @@ export default function RoomChatPage() {
   };
 
   const switchThread = (threadId: string) => {
-    const nextParams = new URLSearchParams(searchParamsString);
+    const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.set("thread", threadId);
-    router.push(`/room/${code}/chat?${nextParams.toString()}`);
-    setMessages([]);
+    router.replace(`/room/${code}/chat?${nextParams.toString()}`);
   };
 
   if (status === "loading") {
@@ -260,7 +273,7 @@ export default function RoomChatPage() {
   return (
     <div className="flex h-screen flex-col bg-background">
       <Suspense fallback={null}>
-        <PanelParamReader onPanelDetected={() => setDesktopPanelOpen(true)} />
+        <PanelParamReader onPanelDetected={openDesktopPanel} />
       </Suspense>
       <Topbar
         onOpenSidebar={() => setSidebarOpen(true)}
@@ -301,7 +314,7 @@ export default function RoomChatPage() {
                 </Button>
               </div>
               <div className="flex gap-2 overflow-x-auto pb-1">
-                {(threadsQuery.data ?? []).map((thread) => (
+                {threads.map((thread) => (
                   <button
                     key={thread.id}
                     type="button"
@@ -321,7 +334,11 @@ export default function RoomChatPage() {
               </div>
             </section>
 
-            {listMessages.length === 0 ? (
+            {messagesQuery.isLoading && activeThreadId ? (
+              <div className="flex min-h-0 flex-1 items-center justify-center">
+                <p className="text-sm text-muted-foreground">Loading conversation...</p>
+              </div>
+            ) : listMessages.length === 0 ? (
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4">
                 <EmptyState
                   title="Start a new conversation"
@@ -337,8 +354,9 @@ export default function RoomChatPage() {
             )}
 
             <Composer
+              key={activeThreadId ?? "no-thread"}
               onSend={handleSend}
-              disabled={sendMutation.isPending || !activeThreadId}
+              disabled={sendMutation.isPending || newConversationMutation.isPending || !activeThreadId}
               showPresets={listMessages.length === 0}
             />
           </div>

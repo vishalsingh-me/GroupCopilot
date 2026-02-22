@@ -38,7 +38,11 @@ export const useRoomStore = create<RoomState>()(
             message.id === id ? { ...message, content } : message
           )
         }),
-      setPanelTab: (panelTab) => set({ panelTab: normalizePanelTab(panelTab) }),
+      setPanelTab: (panelTab) =>
+        set((state) => {
+          const nextPanelTab = normalizePanelTab(panelTab);
+          return state.panelTab === nextPanelTab ? state : { panelTab: nextPanelTab };
+        }),
       resetState: () => set({ room: undefined, messages: [] })
     }),
     {

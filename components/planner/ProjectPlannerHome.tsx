@@ -42,6 +42,8 @@ type CheckInDto = {
 type PlanResponse = {
   ok?: boolean;
   message?: string;
+  warning?: string;
+  emailStatus?: "sent" | "failed" | "skipped";
   schemaNotReady?: boolean;
   plan: ProjectPlanDto | null;
   milestones: MilestoneDto[];
@@ -267,6 +269,13 @@ export default function ProjectPlannerHome({ roomCode, members, sessionEmail, on
     },
     onSuccess: (data) => {
       toast({ title: "Project plan saved", description: data.message ?? "Milestones and check-ins are ready." });
+      if (data.emailStatus === "failed" && data.warning) {
+        toast({
+          title: "Email warning",
+          description: data.warning,
+          variant: "destructive",
+        });
+      }
       setEditing(false);
       setStep(1);
       queryClient.setQueryData(["room-plan", roomCode], data);

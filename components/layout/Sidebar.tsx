@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useRoomStore } from "@/lib/store";
@@ -20,12 +21,14 @@ type NavItem = {
 };
 
 export default function Sidebar({ className }: { className?: string }) {
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { room } = useRoomStore();
+  const { room, resetState } = useRoomStore();
   const { data: session } = useSession();
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
   const roomPath = room ? `/room/${room.code}` : "/room";
   const chatPath = `${roomPath}/chat`;
   const panelBasePath = pathname === chatPath ? chatPath : roomPath;
@@ -40,9 +43,7 @@ export default function Sidebar({ className }: { className?: string }) {
       external: true,
       title: "Open Trello board"
     },
-    { label: "Tickets", href: `${panelBasePath}?panel=tickets`, panel: "tickets" },
-    { label: "Meetings", href: `${panelBasePath}?panel=meetings`, panel: "meetings" },
-    { label: "Guide", href: `${panelBasePath}?panel=guide`, panel: "guide" },
+    { label: "Group Chat", href: `${roomPath}/group-chat` },
     { label: "Settings", href: "/settings" }
   ];
 
@@ -52,6 +53,46 @@ export default function Sidebar({ className }: { className?: string }) {
     setCopied(true);
     toast({ title: "Room code copied", description: room.code });
     setTimeout(() => setCopied(false), 1200);
+  };
+
+  const leaveRoom = async () => {
+    if (!room?.code || isLeaving) return;
+    const confirmed = window.confirm(
+      `Leave room ${room.name ?? room.code}? You can rejoin later with the room code.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsLeaving(true);
+      const response = await fetch(`/api/rooms/${room.code}/leave`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          typeof payload?.error === "string" ? payload.error : "Unable to leave room."
+        );
+      }
+
+      resetState();
+      toast({
+        title: "Left room",
+        description:
+          typeof payload?.message === "string"
+            ? payload.message
+            : "You were removed from this room."
+      });
+      router.push("/");
+    } catch (error) {
+      toast({
+        title: "Could not leave room",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLeaving(false);
+    }
   };
 
   return (
@@ -123,6 +164,19 @@ export default function Sidebar({ className }: { className?: string }) {
           );
         })}
       </nav>
+      <div className="mt-auto pt-4">
+        <Button
+          type="button"
+          variant="destructive"
+          size="sm"
+          className="w-full justify-start whitespace-nowrap text-sm"
+          onClick={leaveRoom}
+          disabled={!room?.code || isLeaving}
+        >
+          <LogOut className="mr-2 h-4 w-4 shrink-0" />
+          {isLeaving ? "Leaving..." : "Leave Room"}
+        </Button>
+      </div>
     </aside>
   );
 }

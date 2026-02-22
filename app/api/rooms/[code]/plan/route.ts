@@ -9,6 +9,7 @@ import {
   isValidTimeZone,
   type PlannerCadence,
 } from "@/lib/project-planner";
+import { sendPlannerCalendarEmails } from "@/lib/email/planner";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -313,9 +314,41 @@ export async function POST(
       });
     }
 
+    const recipients = await prisma.roomMember.findMany({
+      where: {
+        roomId: room.id,
+        userId: { not: user.id },
+      },
+      select: {
+        user: {
+          select: {
+            email: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    const dedupedRecipients = Array.from(
+      new Map(
+        recipients
+          .filter((member) => Boolean(member.user.email))
+          .map((member) => [member.user.email.toLowerCase(), { email: member.user.email, name: member.user.name }])
+      ).values()
+    );
+
+    const emailResult = await sendPlannerCalendarEmails({
+      roomCode: room.code,
+      roomName: room.name,
+      projectTitle: saved.plan.title,
+      recipients: dedupedRecipients,
+    });
+
     return NextResponse.json({
       ok: true,
       message: "Project plan saved.",
+      emailStatus: emailResult.status,
+      warning: emailResult.warning,
       ...saved,
     });
   } catch (error) {

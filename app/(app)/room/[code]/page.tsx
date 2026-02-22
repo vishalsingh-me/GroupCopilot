@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
@@ -14,15 +14,17 @@ import { useRoomStore } from "@/lib/store";
 
 function PanelParamReader({ onPanelDetected }: { onPanelDetected?: () => void }) {
   const searchParams = useSearchParams();
-  const { setPanelTab } = useRoomStore();
+  const panel = searchParams.get("panel");
+  const { panelTab, setPanelTab } = useRoomStore();
 
   useEffect(() => {
-    const panel = searchParams.get("panel");
     if (panel === "plan" || panel === "trello" || panel === "guide" || panel === "activity") {
-      setPanelTab(panel);
+      if (panel !== panelTab) {
+        setPanelTab(panel);
+      }
       onPanelDetected?.();
     }
-  }, [searchParams, setPanelTab, onPanelDetected]);
+  }, [panel, panelTab, setPanelTab, onPanelDetected]);
 
   return null;
 }
@@ -37,6 +39,7 @@ export default function RoomHomePage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [desktopPanelOpen, setDesktopPanelOpen] = useState(false);
+  const openDesktopPanel = useCallback(() => setDesktopPanelOpen(true), []);
 
   useQuery({
     queryKey: ["room", code],
@@ -71,7 +74,7 @@ export default function RoomHomePage() {
   return (
     <div className="flex h-screen flex-col bg-background">
       <Suspense fallback={null}>
-        <PanelParamReader onPanelDetected={() => setDesktopPanelOpen(true)} />
+        <PanelParamReader onPanelDetected={openDesktopPanel} />
       </Suspense>
 
       <Topbar
@@ -123,4 +126,3 @@ export default function RoomHomePage() {
     </div>
   );
 }
-
