@@ -1,4 +1,4 @@
-import type { Mode, TicketPriority, TicketEffort } from "@prisma/client";
+import type { Mode } from "@prisma/client";
 
 export type MockReason =
   | "missing_key"
@@ -17,8 +17,8 @@ export type TicketSuggestion = {
   title: string;
   description: string;
   suggestedOwnerName?: string;
-  priority: TicketPriority;
-  effort: TicketEffort;
+  priority: "low" | "med" | "high";
+  effort: "S" | "M" | "L";
   status: "todo" | "doing" | "done";
 };
 

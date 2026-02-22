@@ -1,60 +1,131 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireRoomMember } from "@/lib/auth-helpers";
-import { generateAssistantReply } from "@/lib/llm/gemini";
 import { prisma } from "@/lib/prisma";
+import { getOrCreateSession, getOpenApproval, writeAuditLog } from "@/lib/agent/stateMachine";
+import { dispatch } from "@/lib/agent/dispatcher";
+import { classifyIntent, buildSmallTalkReply, nextActionHint } from "@/lib/agent/intentRouter";
 
 const ChatSchema = z.object({
   roomCode: z.string().trim().min(4),
   message: z.string().trim().min(1),
-  mode: z.enum(["brainstorm", "clarify", "tickets", "schedule", "conflict"])
+  mode: z.enum(["brainstorm", "clarify", "tickets", "schedule", "conflict"]),
 });
 
 export async function POST(request: Request) {
   try {
     const body = ChatSchema.parse(await request.json());
-    const { room } = await requireRoomMember(body.roomCode.toUpperCase());
+    const { room, user } = await requireRoomMember(body.roomCode.toUpperCase());
 
-    const recentMessages = await prisma.message.findMany({
-      where: {
+    // Persist the user message first
+    await prisma.message.create({
+      data: {
         roomId: room.id,
-        senderType: { in: ["user", "assistant"] }
+        senderType: "user",
+        senderUserId: user.id,
+        content: body.message,
+        mode: body.mode,
       },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-      select: {
-        senderType: true,
-        content: true
-      }
     });
 
-    const history = recentMessages
-      .reverse()
-      .map((entry) => ({
-        role: entry.senderType === "assistant" ? "assistant" : "user",
-        content: entry.content
-      })) as Array<{ role: "user" | "assistant"; content: string }>;
+    // Load room detail and build member context
+    const roomDetail = await prisma.room.findUniqueOrThrow({
+      where: { id: room.id },
+      include: { members: { include: { user: true } } },
+    });
 
-    const latestHistory = history[history.length - 1];
-    if (
-      !latestHistory
-      || latestHistory.role !== "user"
-      || latestHistory.content.trim() !== body.message
-    ) {
-      history.push({ role: "user", content: body.message });
+    const memberIds = roomDetail.members.map((m) => m.userId);
+    const memberNameMap: Record<string, string> = {};
+    const memberNames: string[] = [];
+    for (const m of roomDetail.members) {
+      const name = m.user.name ?? m.user.email;
+      memberNameMap[m.userId] = name;
+      memberNames.push(name);
     }
 
-    const result = await generateAssistantReply({
-      mode: body.mode,
-      message: body.message,
-      history
+    const session = await getOrCreateSession(room.id);
+    const openApproval = await getOpenApproval(session.id);
+
+    // ── Intent routing (deterministic, no LLM) ───────────────────────────────
+    const intent = classifyIntent(body.message);
+
+    if (intent === "SMALL_TALK") {
+      const hint = nextActionHint(session.state);
+      const replyText = buildSmallTalkReply(body.message, Boolean(openApproval), hint);
+
+      await writeAuditLog(room.id, "small_talk_intercepted", {
+        message: body.message.slice(0, 120),
+        state: session.state,
+      }, user.id);
+
+      const assistantMessage = await prisma.message.create({
+        data: {
+          roomId: room.id,
+          senderType: "assistant",
+          senderUserId: null,
+          content: replyText,
+          mode: body.mode,
+          metadata: { agentState: session.state, routed: "small_talk" },
+        },
+      });
+
+      return NextResponse.json({
+        assistantMessage,
+        agentState: session.state,
+        mockMode: false,
+      });
+    }
+
+    if (intent === "GATE_FEEDBACK" && openApproval) {
+      const replyText =
+        `Got it — I've noted your suggestion. The gate is still open for voting. ` +
+        `To request a revision, click **Request Changes** and include your edit in the comment.`;
+
+      await writeAuditLog(room.id, "gate_edit_requested", {
+        message: body.message.slice(0, 200),
+        approvalId: openApproval.id,
+      }, user.id);
+
+      const assistantMessage = await prisma.message.create({
+        data: {
+          roomId: room.id,
+          senderType: "assistant",
+          senderUserId: null,
+          content: replyText,
+          mode: body.mode,
+          metadata: {
+            agentState: session.state,
+            routed: "gate_feedback",
+            approvalRequestId: openApproval.id,
+          },
+        },
+      });
+
+      return NextResponse.json({
+        assistantMessage,
+        agentState: session.state,
+        approvalRequestId: openApproval.id,
+        mockMode: false,
+      });
+    }
+
+    // ── Normal FSM dispatch ───────────────────────────────────────────────────
+    const result = await dispatch({
+      session,
+      roomId: room.id,
+      userId: user.id,
+      userMessage: body.message,
+      memberIds,
+      memberNames,
+      memberNameMap,
+      projectGoal: roomDetail.projectGoal,
     });
-    if (process.env.NODE_ENV !== "production") {
+
+    if (isDev) {
       console.log("[api/chat] result", {
         mockMode: result.mockMode,
-        reason: result.reason ?? null,
+        newState: result.newState ?? null,
         textLength: result.text.length,
-        hasArtifacts: Boolean(result.artifacts)
       });
     }
 
@@ -67,18 +138,30 @@ export async function POST(request: Request) {
         senderUserId: null,
         content: assistantText,
         mode: body.mode,
-        metadata: result.artifacts ? JSON.parse(JSON.stringify(result.artifacts)) : null
-      }
+        metadata: result.approvalRequestId
+          ? { approvalRequestId: result.approvalRequestId, agentState: result.newState }
+          : result.newState
+          ? { agentState: result.newState }
+          : undefined,
+      },
     });
 
     return NextResponse.json({
       assistantMessage,
-      artifacts: result.artifacts,
+      agentState: result.newState,
+      approvalRequestId: result.approvalRequestId,
       mockMode: result.mockMode,
-      mockReason: result.reason ?? null
     });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Unable to generate response" }, { status: 400 });
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: { code: "VALIDATION_ERROR", issues: error.issues } },
+        { status: 400 }
+      );
+    }
+    console.error("[chat] Unhandled error:", error);
+    return NextResponse.json({ error: "Unable to generate response" }, { status: 500 });
   }
 }
+
+const isDev = process.env.NODE_ENV !== "production";
