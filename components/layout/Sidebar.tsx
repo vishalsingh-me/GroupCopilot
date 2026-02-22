@@ -8,18 +8,17 @@ import { cn } from "@/lib/utils";
 import { useRoomStore } from "@/lib/store";
 import { signOut, useSession } from "next-auth/react";
 
-const navItems = [
-  { label: "Chat", href: "/room" },
-  { label: "Tickets", href: "/room?panel=tickets" },
-  { label: "Meetings", href: "/room?panel=meetings" },
-  { label: "Guide", href: "/room?panel=guide" },
-  { label: "Settings", href: "/settings" }
-];
-
 export default function Sidebar({ className }: { className?: string }) {
   const pathname = usePathname();
-  const { room, profile, resetProfile } = useRoomStore();
+  const { room } = useRoomStore();
   const { data: session } = useSession();
+  const navItems = [
+    { label: "Chat", href: room ? `/room/${room.code}` : "/room" },
+    { label: "Tickets", href: room ? `/room/${room.code}?panel=tickets` : "/room?panel=tickets" },
+    { label: "Meetings", href: room ? `/room/${room.code}?panel=meetings` : "/room?panel=meetings" },
+    { label: "Guide", href: room ? `/room/${room.code}?panel=guide` : "/room?panel=guide" },
+    { label: "Settings", href: "/settings" }
+  ];
 
   return (
     <aside className={`h-full w-72 flex-col gap-6 border-r border-border bg-card/70 p-6 ${className ?? "hidden lg:flex"}`}>
@@ -32,8 +31,8 @@ export default function Sidebar({ className }: { className?: string }) {
       </div>
       <div>
         <p className="text-xs uppercase text-muted-foreground">You</p>
-        <p className="text-base font-semibold">{profile?.name ?? "Guest"}</p>
-        <p className="text-sm text-muted-foreground">{profile?.role ?? ""}</p>
+        <p className="text-base font-semibold">{session?.user?.name ?? "Guest"}</p>
+        <p className="text-sm text-muted-foreground">{session?.user?.email ?? ""}</p>
       </div>
       <div>
         <p className="text-xs uppercase text-muted-foreground">Members</p>
@@ -73,9 +72,6 @@ export default function Sidebar({ className }: { className?: string }) {
             Sign out
           </Button>
         ) : null}
-        <Button variant="ghost" className="w-full" onClick={resetProfile}>
-          Reset profile
-        </Button>
       </div>
     </aside>
   );

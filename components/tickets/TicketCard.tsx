@@ -19,12 +19,12 @@ export default function TicketCard({ ticket, onAccept, onEdit, onReject }: Ticke
           <h3 className="text-sm font-semibold">{ticket.title}</h3>
           <p className="mt-1 text-xs text-muted-foreground">{ticket.description}</p>
         </div>
-        <Badge variant={ticket.priority === "High" ? "accent" : "outline"}>
+        <Badge variant={ticket.priority === "high" ? "accent" : "outline"}>
           {ticket.priority}
         </Badge>
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-        <span>Owner: {ticket.suggestedOwner ?? "Unassigned"}</span>
+        <span>Owner: {ticket.ownerUserId ?? ticket.suggestedOwnerUserId ?? "Unassigned"}</span>
         <span>Effort: {ticket.effort}</span>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">

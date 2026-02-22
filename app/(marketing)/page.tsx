@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession, signIn } from "next-auth/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,30 +11,53 @@ import { Input } from "@/components/ui/input";
 import UserMenu from "@/components/user-menu";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import { useRoomStore } from "@/lib/store";
-import { createRoom, joinRoom } from "@/lib/room";
-import type { Role } from "@/lib/types";
-
-const roles: Role[] = ["student", "ta", "instructor", "team member"];
 
 export default function MarketingPage() {
   const router = useRouter();
-  const { setProfile, setRoom } = useRoomStore();
+  const { data: session } = useSession();
+  const { setRoom } = useRoomStore();
   const [open, setOpen] = useState<"create" | "join" | null>(null);
-  const [name, setName] = useState("");
-  const [role, setRole] = useState<Role>("student");
+  const [roomName, setRoomName] = useState("");
   const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = () => {
-    if (!name.trim()) return;
-    const profile = { name: name.trim(), role };
-    setProfile(profile);
-    if (open === "create") {
-      setRoom(createRoom(profile));
+  const ensureSignedIn = async () => {
+    if (!session) {
+      await signIn("google", { callbackUrl: "/" });
+      return false;
     }
-    if (open === "join") {
-      setRoom(joinRoom(profile, code));
-    }
-    router.push("/room");
+    return true;
+  };
+
+  const handleCreate = async () => {
+    if (!(await ensureSignedIn())) return;
+    setLoading(true);
+    const response = await fetch("/api/rooms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: roomName || undefined })
+    });
+    setLoading(false);
+    if (!response.ok) return;
+    const data = await response.json();
+    setRoom(data.room);
+    router.push(`/room/${data.room.code}`);
+  };
+
+  const handleJoin = async () => {
+    if (!(await ensureSignedIn())) return;
+    if (!code.trim()) return;
+    setLoading(true);
+    const response = await fetch("/api/rooms/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code })
+    });
+    setLoading(false);
+    if (!response.ok) return;
+    const data = await response.json();
+    setRoom(data.room);
+    router.push(`/room/${data.room.code}`);
   };
 
   return (
@@ -110,32 +134,19 @@ export default function MarketingPage() {
             <DialogTitle>{open === "create" ? "Create a room" : "Join a room"}</DialogTitle>
           </DialogHeader>
           <div className="mt-4 grid gap-4">
-            <div className="grid gap-2">
-              <label className="text-sm font-medium">Display name</label>
-              <Input value={name} onChange={(event) => setName(event.target.value)} />
-            </div>
-            <div className="grid gap-2">
-              <label className="text-sm font-medium">Role (optional)</label>
-              <select
-                className="h-10 rounded-xl border border-input bg-background px-3 text-sm"
-                value={role}
-                onChange={(event) => setRole(event.target.value as Role)}
-              >
-                {roles.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {open === "join" ? (
+            {open === "create" ? (
+              <div className="grid gap-2">
+                <label className="text-sm font-medium">Room name (optional)</label>
+                <Input value={roomName} onChange={(event) => setRoomName(event.target.value)} />
+              </div>
+            ) : (
               <div className="grid gap-2">
                 <label className="text-sm font-medium">Room code</label>
-                <Input value={code} onChange={(event) => setCode(event.target.value)} />
+                <Input value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} />
               </div>
-            ) : null}
-            <Button onClick={handleSubmit} disabled={!name.trim()}>
-              Continue
+            )}
+            <Button onClick={open === "create" ? handleCreate : handleJoin} disabled={loading}>
+              {loading ? "Working..." : "Continue"}
             </Button>
           </div>
         </DialogContent>

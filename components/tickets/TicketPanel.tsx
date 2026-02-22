@@ -1,178 +1,116 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useEffect } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import TicketCard from "@/components/tickets/TicketCard";
-import TicketList from "@/components/tickets/TicketList";
-import Kanban from "@/components/tickets/Kanban";
-import ToolConfirmDialog from "@/components/integrations/ToolConfirmDialog";
-import { useRoomStore, createSystemMessage } from "@/lib/store";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useRoomStore } from "@/lib/store";
 import type { Ticket } from "@/lib/types";
-import { seedTickets } from "@/lib/mock";
 import { useToast } from "@/components/common/use-toast";
 
 export default function TicketPanel() {
-  const { tickets, setTickets, updateTicket, settings, addToolAction, updateToolAction, addMessage } = useRoomStore();
+  const { room, tickets, setTickets, updateTicket, settings } = useRoomStore();
   const { toast } = useToast();
-  const [editing, setEditing] = useState<Ticket | null>(null);
-  const [view, setView] = useState<"list" | "kanban">("list");
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const code = room?.code;
 
-  useEffect(() => {
-    if (tickets.length === 0) {
-      setTickets(seedTickets);
-    }
-  }, [tickets.length, setTickets]);
-
-  const suggested = useMemo(() => tickets.filter((ticket) => !ticket.accepted), [tickets]);
-  const active = useMemo(() => tickets.filter((ticket) => ticket.accepted), [tickets]);
-
-  const handleAccept = (ticket: Ticket) => {
-    updateTicket({ ...ticket, accepted: true });
-    toast({ title: "Ticket accepted", description: ticket.title });
-  };
-
-  const handleReject = (ticket: Ticket) => {
-    updateTicket({ ...ticket, accepted: false });
-    toast({ title: "Ticket rejected", description: ticket.title });
-    addMessage(
-      createSystemMessage(
-        "Thanks for the feedback. Which part of the ticket should be adjusted so it fits your plan?",
-        "planning"
-      )
-    );
-  };
-
-  const mutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/tools/notion/create-task", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tickets: active })
-      });
-      if (!response.ok) {
-        throw new Error("Failed to create tasks");
-      }
-      return response.json();
+  useQuery({
+    queryKey: ["tickets", code],
+    queryFn: async () => {
+      const res = await fetch(`/api/rooms/${code}/tickets`);
+      if (!res.ok) throw new Error("Failed to load tickets");
+      const data = await res.json();
+      setTickets(data.tickets);
+      return data.tickets as Ticket[];
     },
-    onSuccess: () => {
-      toast({ title: "Notion updated", description: "Mocked tasks created." });
-      addMessage(createSystemMessage("Tool result: Notion tasks created.", "planning"));
-    },
-    onError: () => {
-      toast({ title: "Tool call failed", description: "Retry when ready." });
-    }
+    enabled: Boolean(code)
   });
 
-  const handleCreateNotion = () => {
-    const action = {
-      id: Math.random().toString(36).slice(2, 9),
-      tool: "notion" as const,
-      status: "pending" as const,
-      summary: "Create tickets in Notion",
-      createdAt: new Date().toISOString()
-    };
-    addToolAction(action);
-    mutation.mutate(undefined, {
-      onSuccess: () => updateToolAction({ ...action, status: "success" }),
-      onError: () => updateToolAction({ ...action, status: "error" })
-    });
-  };
+  const updateMutation = useMutation({
+    mutationFn: async (payload: { id: string; status: Ticket["status"] }) => {
+      const res = await fetch(`/api/tickets/${payload.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: payload.status })
+      });
+      if (!res.ok) throw new Error("Update failed");
+      return res.json() as Promise<{ ticket: Ticket }>;
+    },
+    onSuccess: ({ ticket }) => {
+      updateTicket(ticket);
+    },
+    onError: () => toast({ title: "Could not update ticket" })
+  });
+
+  const notionMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/tools/notion/create-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomCode: code, tickets })
+      });
+      if (!res.ok) throw new Error("Tool call failed");
+      return res.json();
+    },
+    onSuccess: () => toast({ title: "Notion task created (mocked if tools not configured)" }),
+    onError: () => toast({ title: "Tool call failed" })
+  });
+
+  useEffect(() => {
+    if (!code) return;
+  }, [code]);
+
+  if (!code) {
+    return <p className="text-sm text-muted-foreground">Join a room to see tickets.</p>;
+  }
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Suggested tickets</h2>
-        <div className="flex gap-2">
-          <Button size="sm" variant={view === "list" ? "secondary" : "outline"} onClick={() => setView("list")}
-          >
-            List
-          </Button>
-          <Button size="sm" variant={view === "kanban" ? "secondary" : "outline"} onClick={() => setView("kanban")}
-          >
-            Kanban
-          </Button>
-        </div>
-      </div>
-      {suggested.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No suggestions yet. Ask the assistant to generate tickets.</p>
-      ) : (
-        <TicketList
-          tickets={suggested}
-          onAccept={handleAccept}
-          onEdit={setEditing}
-          onReject={handleReject}
-        />
-      )}
-
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Active tickets</h2>
+        <h2 className="text-sm font-semibold">Tickets</h2>
         <Button
           size="sm"
           variant="outline"
-          disabled={active.length === 0}
-          onClick={() => (settings.requireToolConfirmation ? setConfirmOpen(true) : handleCreateNotion())}
+          disabled={tickets.length === 0}
+          onClick={() => notionMutation.mutate()}
         >
           Create in Notion
         </Button>
       </div>
-
-      {view === "kanban" ? (
-        <Kanban tickets={active} onUpdate={updateTicket} />
+      {tickets.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Ask the assistant in Tickets mode to propose tasks, then accept them.
+        </p>
       ) : (
         <div className="flex flex-col gap-3">
-          {active.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No active tickets yet.</p>
-          ) : (
-            active.map((ticket) => (
-              <TicketCard key={ticket.id} ticket={ticket} onEdit={() => setEditing(ticket)} />
-            ))
-          )}
+          {tickets.map((ticket) => (
+            <div key={ticket.id} className="rounded-xl border border-border p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold">{ticket.title}</p>
+                  <p className="text-xs text-muted-foreground">{ticket.description}</p>
+                </div>
+                <Select
+                  defaultValue={ticket.status}
+                  onValueChange={(status) => updateMutation.mutate({ id: ticket.id, status: status as Ticket["status"] })}
+                >
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todo">Todo</SelectItem>
+                    <SelectItem value="doing">Doing</SelectItem>
+                    <SelectItem value="done">Done</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="mt-2 flex gap-2 text-[11px] text-muted-foreground">
+                <span>Priority: {ticket.priority}</span>
+                <span>Effort: {ticket.effort}</span>
+              </div>
+            </div>
+          ))}
         </div>
       )}
-
-      <Dialog open={!!editing} onOpenChange={() => setEditing(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit ticket</DialogTitle>
-          </DialogHeader>
-          {editing ? (
-            <div className="grid gap-3">
-              <Input
-                value={editing.title}
-                onChange={(event) => setEditing({ ...editing, title: event.target.value })}
-              />
-              <Textarea
-                value={editing.description}
-                onChange={(event) => setEditing({ ...editing, description: event.target.value })}
-              />
-              <Button
-                onClick={() => {
-                  updateTicket(editing);
-                  setEditing(null);
-                }}
-              >
-                Save
-              </Button>
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      <ToolConfirmDialog
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        onConfirm={() => {
-          setConfirmOpen(false);
-          handleCreateNotion();
-        }}
-        title="Create Notion tasks?"
-        description="This will send accepted tickets to the MCP Notion tool."
-      />
     </div>
   );
 }

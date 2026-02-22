@@ -6,31 +6,37 @@ export const seedTickets: Ticket[] = [
     id: nanoid(),
     title: "Define project scope",
     description: "Agree on the MVP and document what is out of scope.",
-    suggestedOwner: "Project lead",
+    suggestedOwnerUserId: undefined,
+    ownerUserId: undefined,
     effort: "S",
-    priority: "High",
+    priority: "high",
     status: "todo",
-    accepted: false
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   },
   {
     id: nanoid(),
     title: "Draft user interview questions",
     description: "Create a short script to validate assumptions with peers.",
-    suggestedOwner: "Research",
+    suggestedOwnerUserId: undefined,
+    ownerUserId: undefined,
     effort: "M",
-    priority: "Medium",
+    priority: "med",
     status: "todo",
-    accepted: false
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   },
   {
     id: nanoid(),
     title: "Storyboard the core flow",
     description: "Sketch the experience from kickoff to task creation.",
-    suggestedOwner: "Design",
+    suggestedOwnerUserId: undefined,
+    ownerUserId: undefined,
     effort: "M",
-    priority: "Medium",
+    priority: "med",
     status: "todo",
-    accepted: false
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   }
 ];
 
@@ -43,7 +49,8 @@ export const seedMeetingSlots = (): MeetingSlot[] => {
       id: nanoid(),
       start: start.toISOString(),
       end: end.toISOString(),
-      score: 85 - index * 7
+      title: "Team sync",
+      timezone: "UTC"
     };
   });
 };

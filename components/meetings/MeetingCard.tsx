@@ -19,7 +19,9 @@ export default function MeetingCard({ slot }: MeetingCardProps) {
       <p className="text-xs text-muted-foreground">
         Ends {new Date(slot.end).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
       </p>
-      <p className="mt-2 text-xs text-muted-foreground">Score: {slot.score}</p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        {slot.title ?? "Proposed slot"} {slot.timezone ? `(${slot.timezone})` : ""}
+      </p>
     </div>
   );
 }

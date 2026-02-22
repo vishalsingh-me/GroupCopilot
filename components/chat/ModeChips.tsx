@@ -1,6 +1,7 @@
 "use client";
 
 import { Brain, ClipboardList, Handshake, Lightbulb, CalendarRange } from "lucide-react";
+import type { ComponentType } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { Mode } from "@/lib/types";
@@ -10,12 +11,12 @@ type ModeChipsProps = {
   onChange: (mode: Mode, label: string) => void;
 };
 
-const modes = [
-  { mode: "brainstorm" as Mode, label: "Brainstorm", icon: Lightbulb },
-  { mode: "planning" as Mode, label: "Generate tickets", icon: ClipboardList },
-  { mode: "conflict" as Mode, label: "Conflict help", icon: Handshake },
-  { mode: "general" as Mode, label: "Clarify requirements", icon: Brain },
-  { mode: "general" as Mode, label: "Schedule meeting", icon: CalendarRange }
+const modes: Array<{ mode: Mode; label: string; icon: ComponentType<{ className?: string }> }> = [
+  { mode: "brainstorm", label: "Brainstorm", icon: Lightbulb },
+  { mode: "clarify", label: "Clarify", icon: Brain },
+  { mode: "tickets", label: "Tickets", icon: ClipboardList },
+  { mode: "schedule", label: "Schedule", icon: CalendarRange },
+  { mode: "conflict", label: "Conflict", icon: Handshake }
 ];
 
 export default function ModeChips({ mode, onChange }: ModeChipsProps) {

@@ -1,27 +1,43 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { requireRoomMember } from "@/lib/auth-helpers";
+import { generateAssistantReply } from "@/lib/llm/gemini";
+import { prisma } from "@/lib/prisma";
+
+const ChatSchema = z.object({
+  roomCode: z.string().trim().min(4),
+  message: z.string().trim().min(1),
+  mode: z.enum(["brainstorm", "clarify", "tickets", "schedule", "conflict"])
+});
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const { prompt, mode } = body as { prompt: string; mode: string };
+  try {
+    const body = ChatSchema.parse(await request.json());
+    const { room, user } = await requireRoomMember(body.roomCode.toUpperCase());
 
-  const mockResponse = {
-    brainstorm:
-      "Great, let's brainstorm. 1) What outcome would make this collaboration a success? 2) What constraints do you have (time, tools, team size)? 3) List three possible project directions. 4) Which one feels most achievable this week? 5) Who will validate the choice?",
-    planning:
-      "I can turn this into tickets. Confirm the core deliverables, then I'll propose tasks with owners, effort, and priority.",
-    conflict:
-      "Thanks for naming the tension. Let's clarify needs, pick a script to de-escalate, and agree on next steps.",
-    general:
-      "Got it. What is the primary goal for this session, and what is the biggest risk to success?"
-  } as Record<string, string>;
+    const result = await generateAssistantReply({
+      mode: body.mode,
+      message: body.message
+    });
 
-  const content = mockResponse[mode] ?? `Thanks for sharing: ${prompt}`;
+    const assistantMessage = await prisma.message.create({
+      data: {
+        roomId: room.id,
+        senderType: "assistant",
+        senderUserId: null,
+        content: result.text,
+        mode: body.mode,
+        metadata: result.artifacts ?? null
+      }
+    });
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ content, mock: true });
+    return NextResponse.json({
+      assistantMessage,
+      artifacts: result.artifacts,
+      mockMode: result.mockMode
+    });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Unable to generate response" }, { status: 400 });
   }
-
-  // TODO: Proxy Gemini via server-side API. Do not log prompts or responses.
-  return NextResponse.json({ content, mock: true });
 }

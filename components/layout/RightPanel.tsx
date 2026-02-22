@@ -4,6 +4,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import TicketPanel from "@/components/tickets/TicketPanel";
 import MeetingsPanel from "@/components/meetings/MeetingsPanel";
 import GuidePanel from "@/components/guide/GuidePanel";
+import ActivityPanel from "@/components/activity/ActivityPanel";
 import { useRoomStore } from "@/lib/store";
 
 export default function RightPanel({ className }: { className?: string }) {
@@ -11,11 +12,12 @@ export default function RightPanel({ className }: { className?: string }) {
 
   return (
     <aside className={`h-full w-96 flex-col border-l border-border bg-card/70 p-4 ${className ?? "hidden lg:flex"}`}>
-      <Tabs value={panelTab} onValueChange={(value) => setPanelTab(value as "tickets" | "meetings" | "guide")}>
+      <Tabs value={panelTab} onValueChange={(value) => setPanelTab(value as any)}>
         <TabsList className="w-full justify-between">
           <TabsTrigger value="tickets">Tickets</TabsTrigger>
           <TabsTrigger value="meetings">Meetings</TabsTrigger>
           <TabsTrigger value="guide">Guide</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
         <TabsContent value="tickets">
           <TicketPanel />
@@ -25,6 +27,9 @@ export default function RightPanel({ className }: { className?: string }) {
         </TabsContent>
         <TabsContent value="guide">
           <GuidePanel />
+        </TabsContent>
+        <TabsContent value="activity">
+          <ActivityPanel />
         </TabsContent>
       </Tabs>
     </aside>

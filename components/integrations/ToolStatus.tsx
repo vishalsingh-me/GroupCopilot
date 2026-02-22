@@ -14,9 +14,9 @@ export default function ToolStatus({ actions }: ToolStatusProps) {
         ) : (
           actions.map((action) => (
             <div key={action.id} className="rounded-xl border border-border bg-card p-3">
-              <p className="text-xs font-medium">{action.summary}</p>
+              <p className="text-xs font-medium">{action.type}</p>
               <p className="text-[11px] text-muted-foreground">
-                {action.tool} · {action.status} · {new Date(action.createdAt).toLocaleTimeString()}
+                {action.status} · {new Date(action.createdAt).toLocaleTimeString()}
               </p>
             </div>
           ))

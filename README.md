@@ -91,8 +91,8 @@ shared/
 |---|---|
 | Framework | Next.js 15 (App Router), TypeScript, React 19 |
 | Styling | Tailwind CSS v3, shadcn/ui component primitives |
-| Database | PostgreSQL 16 + pgvector (HNSW index for cosine similarity) |
-| ORM | Drizzle ORM + drizzle-kit |
+| Database | PostgreSQL via Prisma |
+| ORM | Prisma |
 | Job queue | pg-boss (Postgres-backed, no Redis required) |
 | LLM | Gemini (`gemini-3-pro-preview` for text, `text-embedding-004` for embeddings) |
 | State (client) | Zustand |

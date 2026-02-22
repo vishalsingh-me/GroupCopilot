@@ -1,29 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type {
-  Message,
-  Mode,
-  Profile,
-  Room,
-  Ticket,
-  MeetingSlot,
-  ToolAction,
-  KnowledgeItem
-} from "@/lib/types";
+import type { Message, Mode, Room, Ticket, ToolAction, MeetingSlot } from "@/lib/types";
 import { nanoid } from "@/lib/uuid";
 
-type PanelTab = "tickets" | "meetings" | "guide";
-
-type SettingsState = {
-  modelProvider: "gemini" | "openai" | "local";
-  apiKey?: string;
-  mcpServerUrl?: string;
-  requireToolConfirmation: boolean;
-  devModeStoreKeys: boolean;
-};
+type PanelTab = "tickets" | "meetings" | "guide" | "activity";
 
 type RoomState = {
-  profile?: Profile;
   room?: Room;
   messages: Message[];
   tickets: Ticket[];
@@ -31,10 +13,11 @@ type RoomState = {
   mode: Mode;
   panelTab: PanelTab;
   toolActions: ToolAction[];
-  knowledgeItems: KnowledgeItem[];
-  settings: SettingsState;
-  setProfile: (profile?: Profile) => void;
+  settings: {
+    requireToolConfirmation: boolean;
+  };
   setRoom: (room?: Room) => void;
+  setMessages: (messages: Message[]) => void;
   addMessage: (message: Message) => void;
   updateMessage: (id: string, content: string) => void;
   setMode: (mode: Mode) => void;
@@ -44,32 +27,26 @@ type RoomState = {
   setMeetingSlots: (slots: MeetingSlot[]) => void;
   addToolAction: (action: ToolAction) => void;
   updateToolAction: (action: ToolAction) => void;
-  setKnowledgeItems: (items: KnowledgeItem[]) => void;
-  setSettings: (settings: Partial<SettingsState>) => void;
-  resetProfile: () => void;
-};
-
-const defaultSettings: SettingsState = {
-  modelProvider: "gemini",
-  requireToolConfirmation: true,
-  devModeStoreKeys: false
+  setToolActions: (actions: ToolAction[]) => void;
+  setSettings: (settings: Partial<RoomState["settings"]>) => void;
+  resetState: () => void;
 };
 
 export const useRoomStore = create<RoomState>()(
   persist(
     (set, get) => ({
-      profile: undefined,
       room: undefined,
       messages: [],
       tickets: [],
       meetingSlots: [],
-      mode: "general",
+      mode: "brainstorm",
       panelTab: "tickets",
       toolActions: [],
-      knowledgeItems: [],
-      settings: defaultSettings,
-      setProfile: (profile) => set({ profile }),
+      settings: {
+        requireToolConfirmation: true
+      },
       setRoom: (room) => set({ room }),
+      setMessages: (messages) => set({ messages }),
       addMessage: (message) => set({ messages: [...get().messages, message] }),
       updateMessage: (id, content) =>
         set({
@@ -90,14 +67,13 @@ export const useRoomStore = create<RoomState>()(
         set({
           toolActions: get().toolActions.map((item) => (item.id === action.id ? action : item))
         }),
-      setKnowledgeItems: (knowledgeItems) => set({ knowledgeItems }),
+      setToolActions: (actions) => set({ toolActions: actions }),
       setSettings: (settings) => set({ settings: { ...get().settings, ...settings } }),
-      resetProfile: () => set({ profile: undefined, room: undefined, messages: [] })
+      resetState: () => set({ room: undefined, messages: [], tickets: [], toolActions: [] })
     }),
     {
       name: "group-copilot-store",
       partialize: (state) => ({
-        profile: state.profile,
         room: state.room,
         messages: state.messages,
         tickets: state.tickets,
@@ -105,23 +81,21 @@ export const useRoomStore = create<RoomState>()(
         mode: state.mode,
         panelTab: state.panelTab,
         toolActions: state.toolActions,
-        knowledgeItems: state.knowledgeItems,
-        settings: {
-          ...state.settings,
-          apiKey: state.settings.devModeStoreKeys ? state.settings.apiKey : undefined
-        }
+        settings: state.settings
       })
     }
   )
 );
 
 export function createSystemMessage(content: string, mode?: Mode): Message {
+  const now = new Date().toISOString();
   return {
     id: nanoid(),
     role: "system",
     sender: "System",
     content,
-    timestamp: new Date().toISOString(),
-    mode
+    mode: mode ?? "brainstorm",
+    createdAt: now,
+    timestamp: now
   };
 }

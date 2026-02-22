@@ -4,6 +4,7 @@ import { Menu, PanelRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import { useRoomStore } from "@/lib/store";
+import UserMenu from "@/components/user-menu";
 
 type TopbarProps = {
   onOpenSidebar?: () => void;
@@ -25,6 +26,7 @@ export default function Topbar({ onOpenSidebar, onOpenPanel }: TopbarProps) {
         </div>
       </div>
       <div className="flex items-center gap-2">
+        <UserMenu />
         <Button variant="outline" size="icon" className="lg:hidden" onClick={onOpenPanel}>
           <PanelRight className="h-4 w-4" />
         </Button>
