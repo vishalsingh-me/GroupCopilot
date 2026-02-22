@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRoomMember } from "@/lib/auth-helpers";
+import { requireSessionUser } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -14,12 +14,22 @@ export async function GET(
 ) {
   try {
     const { id } = await ctx.params;
+    const { user } = await requireSessionUser();
 
     const approval = await prisma.approvalRequest.findUnique({
       where: { id },
-      include: {
+      select: {
+        id: true,
+        type: true,
+        payload: true,
+        status: true,
+        resolvedAt: true,
         votes: { select: { userId: true, vote: true, comment: true, votedAt: true } },
-        session: { include: { room: true } },
+        session: {
+          select: {
+            roomId: true,
+          },
+        },
       },
     });
 
@@ -28,7 +38,18 @@ export async function GET(
     }
 
     // Auth: require membership in the approval's room
-    const { user } = await requireRoomMember(approval.session.room.code);
+    const membership = await prisma.roomMember.findUnique({
+      where: {
+        roomId_userId: {
+          roomId: approval.session.roomId,
+          userId: user.id,
+        },
+      },
+      select: { id: true },
+    });
+    if (!membership) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const memberCount = await prisma.roomMember.count({
       where: { roomId: approval.session.roomId },

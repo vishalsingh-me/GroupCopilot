@@ -3,13 +3,18 @@ import { z } from "zod";
 import { requireRoomMember } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import {
-  checkConnection,
   getBoard,
   getBoardLists,
   getBoardMembers,
   isTrelloConfigured,
   registerWebhook,
 } from "@/lib/trello/client";
+import {
+  TRELLO_MVP_BOARD_ID,
+  TRELLO_MVP_BOARD_SHORT_LINK,
+  TRELLO_MVP_BOARD_URL,
+  TRELLO_MVP_PUBLISH_LIST_ID,
+} from "@/lib/trello/config";
 
 const ConnectSchema = z.object({
   boardId: z.string().trim().min(1),
@@ -64,35 +69,37 @@ export async function GET(
       }
     }
 
-    if (!room.trelloBoardId) {
-      return NextResponse.json({
-        configured: true,
-        trelloConfigured: true,
-        connected: false,
-        listId: room.trelloListId,
+    const effectiveBoardId = room.trelloBoardId ?? TRELLO_MVP_BOARD_ID;
+    const effectiveListId = room.trelloListId ?? TRELLO_MVP_PUBLISH_LIST_ID;
+
+    if (!room.trelloBoardId || room.trelloListId !== effectiveListId) {
+      await prisma.room.update({
+        where: { id: room.id },
+        data: {
+          trelloBoardId: effectiveBoardId,
+          trelloListId: effectiveListId,
+        },
+        select: { id: true },
       });
     }
 
-    const [connected, lists, members, board] = await Promise.all([
-      checkConnection(room.trelloBoardId),
-      getBoardLists(room.trelloBoardId).catch(() => []),
-      getBoardMembers(room.trelloBoardId).catch(() => []),
-      getBoard(room.trelloBoardId).catch(() => null),
+    const [lists, members, board] = await Promise.all([
+      getBoardLists(effectiveBoardId).catch(() => []),
+      getBoardMembers(effectiveBoardId).catch(() => []),
+      getBoard(effectiveBoardId).catch(() => null),
     ]);
 
     return NextResponse.json({
       configured: true,
       trelloConfigured: true,
-      connected,
-      boardId: room.trelloBoardId,
-      boardShortLink: room.trelloBoardShortLink ?? board?.shortLink ?? null,
-      boardUrl:
-        room.trelloBoardShortLink
-          ? `https://trello.com/b/${room.trelloBoardShortLink}`
-          : board?.url ?? `https://trello.com/b/${room.trelloBoardId}`,
-      listId: room.trelloListId,
+      connected: true,
+      boardId: effectiveBoardId,
+      boardShortLink: board?.shortLink ?? TRELLO_MVP_BOARD_SHORT_LINK,
+      boardUrl: board?.url ?? TRELLO_MVP_BOARD_URL,
+      listId: effectiveListId,
       lists,
       members,
+      mvpDirectConnection: true,
     });
   } catch (error) {
     console.error(error);
@@ -179,9 +186,9 @@ export async function POST(
       where: { id: room.id },
       data: {
         trelloBoardId: board.id,
-        trelloBoardShortLink: board.shortLink ?? null,
         trelloListId: resolvedListId,
       },
+      select: { id: true },
     });
 
     return NextResponse.json({
@@ -215,7 +222,8 @@ export async function DELETE(
     const { room } = await requireRoomMember(code.toUpperCase());
     await prisma.room.update({
       where: { id: room.id },
-      data: { trelloBoardId: null, trelloBoardShortLink: null, trelloListId: null },
+      data: { trelloBoardId: null, trelloListId: null },
+      select: { id: true },
     });
     return NextResponse.json({ ok: true });
   } catch (error) {

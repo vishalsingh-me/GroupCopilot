@@ -28,7 +28,21 @@ export async function requireRoomMember(roomCode: string) {
   const { user } = await requireSessionUser();
   const room = await prisma.room.findUnique({
     where: { code: roomCode },
-    include: { members: true }
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      projectGoal: true,
+      trelloBoardId: true,
+      trelloListId: true,
+      members: {
+        select: {
+          userId: true,
+          role: true,
+          trelloMemberId: true,
+        },
+      },
+    },
   });
   if (!room) {
     throw new Error("NOT_FOUND");

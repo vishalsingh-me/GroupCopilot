@@ -281,11 +281,22 @@ export default function RoomPage() {
               <ApprovalGate
                 approval={approval}
                 onVote={async (vote, comment) => {
-                  await fetch(`/api/approvals/${approval.id}/vote`, {
+                  const response = await fetch(`/api/approvals/${approval.id}/vote`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ vote, comment }),
                   });
+                  const payload = await response.json().catch(() => null);
+                  if (!response.ok || payload?.ok === false) {
+                    const message =
+                      typeof payload?.message === "string"
+                        ? payload.message
+                        : typeof payload?.error === "string"
+                          ? payload.error
+                          : "Unable to record vote.";
+                    toast({ title: "Vote failed", description: message, variant: "destructive" });
+                    return;
+                  }
                   queryClient.invalidateQueries({ queryKey: ["session", code] });
                   queryClient.invalidateQueries({ queryKey: ["messages", code] });
                 }}

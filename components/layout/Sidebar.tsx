@@ -9,6 +9,7 @@ import { useRoomStore } from "@/lib/store";
 import { useSession } from "next-auth/react";
 import { useToast } from "@/components/common/use-toast";
 import { useState } from "react";
+import { TRELLO_MVP_BOARD_URL } from "@/lib/trello/config";
 
 type NavItem = {
   label: string;
@@ -27,18 +28,14 @@ export default function Sidebar({ className }: { className?: string }) {
   const [copied, setCopied] = useState(false);
   const roomPath = room ? `/room/${room.code}` : "/room";
   const activePanel = searchParams.get("panel");
-  const trelloBoardUrl =
-    room?.trelloBoardUrl ??
-    (room?.trelloBoardShortLink ? `https://trello.com/b/${room.trelloBoardShortLink}` : null) ??
-    (room?.trelloBoardId ? `https://trello.com/b/${room.trelloBoardId}` : null);
 
   const navItems: NavItem[] = [
     { label: "Chat", href: roomPath, panel: null },
     {
       label: "Trello",
-      href: trelloBoardUrl ?? "/settings",
-      external: Boolean(trelloBoardUrl),
-      title: trelloBoardUrl ? "Open Trello board" : "Connect Trello in Settings"
+      href: TRELLO_MVP_BOARD_URL,
+      external: true,
+      title: "Open Trello board"
     },
     { label: "Tickets", href: `${roomPath}?panel=tickets`, panel: "tickets" },
     { label: "Meetings", href: `${roomPath}?panel=meetings`, panel: "meetings" },

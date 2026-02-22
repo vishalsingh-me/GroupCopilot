@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRoomStore } from "@/lib/store";
 import { useToast } from "@/components/common/use-toast";
+import { TRELLO_MVP_BOARD_URL, TRELLO_MVP_PUBLISH_LIST_ID } from "@/lib/trello/config";
 
 type TrelloList = {
   id: string;
@@ -140,6 +141,14 @@ export default function SettingsPage() {
             <Trello className="h-4 w-4 text-muted-foreground" />
             <p className="text-sm font-semibold">Trello integration</p>
           </div>
+          <a
+            href={TRELLO_MVP_BOARD_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-fit text-xs text-primary underline underline-offset-2"
+          >
+            Open Trello board
+          </a>
 
           {!code ? (
             <p className="text-xs text-muted-foreground">
@@ -160,18 +169,8 @@ export default function SettingsPage() {
               <p className="text-xs text-muted-foreground font-mono">
                 Board: {trello?.boardId ?? "—"}
               </p>
-              {trello?.boardUrl ? (
-                <a
-                  href={trello?.boardUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-primary underline underline-offset-2"
-                >
-                  Open Trello board
-                </a>
-              ) : null}
               <p className="text-xs text-muted-foreground font-mono">
-                List: {trello?.listId ?? "Auto (This Week / first open list)"}
+                Publish list (fixed MVP): {TRELLO_MVP_PUBLISH_LIST_ID}
               </p>
               <Button
                 variant="destructive"
