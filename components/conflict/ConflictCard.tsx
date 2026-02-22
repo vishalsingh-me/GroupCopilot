@@ -51,14 +51,16 @@ export default function ConflictCard({ data }: ConflictCardProps) {
         </span>
       </div>
 
-      <p className="whitespace-pre-wrap text-foreground">{data.neutralSummary}</p>
+      <p className="font-chatSerif whitespace-pre-wrap text-[16px] leading-7 tracking-normal text-foreground sm:text-[17px]">
+        {data.neutralSummary}
+      </p>
 
       {data.clarifyingQuestions.length > 0 ? (
         <div className="space-y-1.5">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Clarifying questions
           </p>
-          <ul className="list-disc space-y-1 pl-5 text-foreground">
+          <ul className="font-chatSerif list-disc space-y-1 pl-5 text-[16px] leading-7 tracking-normal text-foreground sm:text-[17px]">
             {data.clarifyingQuestions.map((question, index) => (
               <li key={`${question}-${index}`} className="whitespace-pre-wrap">
                 {question}
@@ -76,8 +78,12 @@ export default function ConflictCard({ data }: ConflictCardProps) {
           <div className="space-y-2">
             {data.options.map((option, index) => (
               <div key={`${option.title}-${index}`} className="space-y-0.5">
-                <p className="font-medium text-foreground">{option.title}</p>
-                <p className="text-muted-foreground">{option.description}</p>
+                <p className="font-chatSerif text-[16px] font-semibold leading-7 tracking-normal text-foreground sm:text-[17px]">
+                  {option.title}
+                </p>
+                <p className="font-chatSerif text-[16px] leading-7 tracking-normal text-muted-foreground sm:text-[17px]">
+                  {option.description}
+                </p>
               </div>
             ))}
           </div>
@@ -109,7 +115,7 @@ export default function ConflictCard({ data }: ConflictCardProps) {
             )}
           </Button>
         </div>
-        <p className="whitespace-pre-wrap rounded-lg bg-muted/50 px-3 py-2 text-foreground">
+        <p className="font-chatSerif whitespace-pre-wrap rounded-lg bg-muted/50 px-3 py-2 text-[16px] leading-7 tracking-normal text-foreground sm:text-[17px]">
           {data.suggestedScript}
         </p>
       </div>
@@ -119,7 +125,9 @@ export default function ConflictCard({ data }: ConflictCardProps) {
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Next question
           </p>
-          <p className="text-foreground">{data.nextQuestion}</p>
+          <p className="font-chatSerif text-[16px] leading-7 tracking-normal text-foreground sm:text-[17px]">
+            {data.nextQuestion}
+          </p>
         </div>
       ) : null}
     </div>

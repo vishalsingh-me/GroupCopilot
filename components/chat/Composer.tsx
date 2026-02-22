@@ -64,7 +64,7 @@ export default function Composer({ onSend, disabled, showPresets = false }: Comp
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder="Message Group Copilot..."
-          className="min-h-[92px] resize-none border-0 px-0 shadow-none focus-visible:ring-0"
+          className="min-h-[92px] resize-none border-0 px-0 font-chatSerif text-[16px] leading-7 tracking-normal shadow-none focus-visible:ring-0 sm:text-[17px]"
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
