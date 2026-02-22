@@ -5,8 +5,13 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "GroupCoPilot",
+  title: "Group Copilot",
   description: "AI Collaboration Governor for Student Group Projects",
+  icons: {
+    icon: "/group-copilot-logo.svg",
+    shortcut: "/group-copilot-logo.svg",
+    apple: "/group-copilot-logo.svg"
+  }
 };
 
 export default function RootLayout({

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession, signIn } from "next-auth/react";
@@ -65,9 +66,20 @@ export default function MarketingPage() {
       <div className="min-h-screen bg-mesh-light dark:bg-mesh-dark">
         <div className="mx-auto flex min-h-screen max-w-6xl flex-col justify-between px-6 py-16">
           <header className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase text-muted-foreground">Group Copilot</p>
-              <h1 className="text-3xl font-semibold tracking-tight">Collaborate smarter with a shared AI copilot.</h1>
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-card/80">
+                <Image
+                  src="/group-copilot-logo.svg"
+                  alt="Group Copilot logo"
+                  width={24}
+                  height={24}
+                  priority
+                />
+              </div>
+              <div>
+                <p className="text-xs uppercase text-muted-foreground">Group Copilot</p>
+                <h1 className="text-3xl font-semibold tracking-tight">Collaborate smarter with a shared AI copilot.</h1>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <UserMenu />

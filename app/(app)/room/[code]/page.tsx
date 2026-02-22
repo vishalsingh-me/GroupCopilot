@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useSession, signIn } from "next-auth/react";
-import { Menu, PanelRight, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
@@ -169,12 +169,12 @@ export default function RoomPage() {
         mockMode?: boolean;
       }>;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setMockStatus((previous) => ({
         ...previous,
         mockLLM: previous.mockLLM || Boolean(data.mockMode)
       }));
-      queryClient.invalidateQueries({ queryKey: ["messages", code] });
+      await queryClient.invalidateQueries({ queryKey: ["messages", code] });
       if (data.artifacts?.meetingProposals) {
         setMeetingSlots(
           data.artifacts.meetingProposals.map((slot, idx) => ({
@@ -206,6 +206,9 @@ export default function RoomPage() {
   };
 
   const listMessages = useMemo(() => messages, [messages]);
+  const assistantActivityLabel = currentMode === "tickets" || currentMode === "schedule"
+    ? "Assistant is writing..."
+    : "Assistant is thinking...";
 
   if (status === "loading") {
     return (
@@ -252,21 +255,6 @@ export default function RoomPage() {
             <div className="pt-3" />
           )}
           <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4">
-            <div className="flex items-center justify-between py-3">
-              <div className="min-w-0">
-                <ModeChips mode={currentMode} onChange={handleModeChange} />
-                <p className="mt-2 text-xs text-muted-foreground">{modeDescriptions[currentMode]}</p>
-              </div>
-              <div className="flex items-center gap-2 lg:hidden">
-                <Button variant="outline" size="icon" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar">
-                  <Menu className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="icon" onClick={() => setMobilePanelOpen(true)} aria-label="Open panel">
-                  <PanelRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
             {listMessages.length === 0 ? (
               <div className="flex min-h-0 flex-1 items-center">
                 <EmptyState
@@ -277,9 +265,17 @@ export default function RoomPage() {
                 />
               </div>
             ) : (
-              <MessageList messages={listMessages} />
+              <MessageList
+                messages={listMessages}
+                isAssistantThinking={sendMutation.isPending}
+                thinkingLabel={assistantActivityLabel}
+              />
             )}
 
+            <div className="border-t border-border/60 pt-3">
+              <ModeChips mode={currentMode} onChange={handleModeChange} />
+              <p className="mt-2 text-xs text-muted-foreground">{modeDescriptions[currentMode]}</p>
+            </div>
             <Composer
               onSend={handleSend}
               disabled={sendMutation.isPending}

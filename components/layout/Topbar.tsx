@@ -1,9 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import { Menu, PanelRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ThemeToggle from "@/components/layout/ThemeToggle";
-import { useRoomStore } from "@/lib/store";
 import UserMenu from "@/components/user-menu";
 
 type TopbarProps = {
@@ -19,17 +19,23 @@ export default function Topbar({
   onOpenMobilePanel,
   panelOpen
 }: TopbarProps) {
-  const { room } = useRoomStore();
-
   return (
     <header className="flex items-center justify-between border-b border-border/70 bg-background/95 px-4 py-3 backdrop-blur lg:px-6">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" className="lg:hidden" onClick={onOpenSidebar}>
           <Menu className="h-5 w-5" />
         </Button>
+        <div className="hidden h-12 w-12 items-center justify-center rounded-xl border border-border/70 bg-card/80 sm:flex">
+          <Image
+            src="/group-copilot-logo.svg"
+            alt="Group Copilot logo"
+            width={30}
+            height={30}
+            priority
+          />
+        </div>
         <div>
           <p className="text-xs uppercase text-muted-foreground">Group Copilot</p>
-          <p className="text-base font-semibold">{room?.name ?? "Workspace"}</p>
         </div>
       </div>
       <div className="flex items-center gap-2">
