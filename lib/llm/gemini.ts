@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import type { Mode } from "@prisma/client";
+import type { Mode } from "@/lib/types";
 import { z } from "zod";
 import {
   generateMockReply,
@@ -15,6 +15,20 @@ import {
   type ConflictTeamContext
 } from "@/lib/prompts/mediator/build";
 
+// Read from env so the model can be overridden without a code change.
+// Default: gemini-2.0-flash (widely available on free keys)
+export const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
+
+export function getApiKey(): string | undefined {
+  return process.env.GEMINI_API_KEY || undefined;
+}
+
+function getClient() {
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+  return new GoogleGenerativeAI(apiKey).getGenerativeModel({ model: GEMINI_MODEL });
+}
+
 type GenerateArgs = {
   mode: Mode;
   message: string;
@@ -29,7 +43,6 @@ export type PromptGenerationResult = {
   reason?: MockReason;
 };
 
-const GEMINI_MODEL = "gemini-2.5-flash";
 const isDev = process.env.NODE_ENV !== "production";
 const MAX_REPLY_CHARS = 6000;
 
@@ -150,6 +163,50 @@ export async function generateTextFromPrompt(prompt: string): Promise<PromptGene
     }
     return { text: "", mockMode: true, reason: "gemini_error" };
   }
+}
+
+/**
+ * Generate a reply from a raw prompt string (used by the agent state machine).
+ * Falls back to a plain echo if no API key is configured.
+ */
+export async function generateFromPrompt(
+  prompt: string,
+  fallbackText: string
+): Promise<{ text: string; mockMode: boolean }> {
+  const model = getClient();
+  if (!model) return { text: fallbackText, mockMode: true };
+
+  try {
+    const result = await model.generateContent(prompt);
+    const text = result.response.text()?.trim() ?? fallbackText;
+    return { text, mockMode: false };
+  } catch (error) {
+    console.error("Gemini error:", error);
+    return { text: fallbackText, mockMode: true };
+  }
+}
+
+/** Classify a Gemini SDK error into a safe code for client display. Never leaks raw secrets. */
+export function classifyGeminiError(error: unknown): {
+  errorType: "MODEL_NOT_FOUND" | "QUOTA_EXCEEDED" | "AUTH_ERROR" | "NETWORK_ERROR" | "SDK_ERROR";
+  errorMessageSafe: string;
+} {
+  const msg = error instanceof Error ? error.message : String(error);
+  const lower = msg.toLowerCase();
+
+  if (lower.includes("not found") || lower.includes("404") || lower.includes("model")) {
+    return { errorType: "MODEL_NOT_FOUND", errorMessageSafe: `Model "${GEMINI_MODEL}" not found. Check GEMINI_MODEL env var.` };
+  }
+  if (lower.includes("quota") || lower.includes("429") || lower.includes("resource_exhausted")) {
+    return { errorType: "QUOTA_EXCEEDED", errorMessageSafe: "API quota exceeded. Try again later." };
+  }
+  if (lower.includes("api_key") || lower.includes("401") || lower.includes("403") || lower.includes("permission") || lower.includes("invalid key")) {
+    return { errorType: "AUTH_ERROR", errorMessageSafe: "API key rejected. Check GEMINI_API_KEY value." };
+  }
+  if (lower.includes("network") || lower.includes("enotfound") || lower.includes("fetch failed") || lower.includes("timeout")) {
+    return { errorType: "NETWORK_ERROR", errorMessageSafe: "Network error reaching Gemini API." };
+  }
+  return { errorType: "SDK_ERROR", errorMessageSafe: "Unexpected SDK error. Check server logs." };
 }
 
 function buildPrompt(mode: Mode, message: string, history: ConflictPromptHistoryItem[]) {
@@ -425,4 +482,3 @@ function getGeminiErrorMeta(error: unknown) {
     apiMessage: maybeError.response?.data?.error?.message
   };
 }
-
