@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useSession, signIn } from "next-auth/react";
+import { Menu, PanelRight, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
@@ -11,8 +12,8 @@ import MessageList from "@/components/chat/MessageList";
 import Composer from "@/components/chat/Composer";
 import ModeChips from "@/components/chat/ModeChips";
 import EmptyState from "@/components/common/EmptyState";
-import ToolStatus from "@/components/integrations/ToolStatus";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/common/use-toast";
 import { useRoomStore, createSystemMessage } from "@/lib/store";
 import { createMessage } from "@/lib/chat";
@@ -27,17 +28,24 @@ const modeDescriptions: Record<Mode, string> = {
   conflict: "I will use the conflict guide to propose scripts and steps."
 };
 
-function PanelParamReader() {
+function PanelParamReader({
+  onPanelDetected
+}: {
+  onPanelDetected?: () => void;
+}) {
   const searchParams = useSearchParams();
   const { setPanelTab } = useRoomStore();
   useEffect(() => {
     const panel = searchParams.get("panel");
     if (panel === "tickets" || panel === "meetings" || panel === "guide" || panel === "activity") {
       setPanelTab(panel as any);
+      onPanelDetected?.();
     }
-  }, [searchParams, setPanelTab]);
+  }, [searchParams, setPanelTab, onPanelDetected]);
   return null;
 }
+
+const MOCK_BANNER_DISMISS_KEY = "group-copilot:mock-banner-dismissed";
 
 export default function RoomPage() {
   const params = useParams<{ code: string }>();
@@ -53,19 +61,47 @@ export default function RoomPage() {
     addMessage,
     setMode,
     mode,
-    setMeetingSlots,
-    toolActions
+    setMeetingSlots
   } = useRoomStore();
   const currentMode = normalizeMode(mode);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [mockBanner, setMockBanner] = useState(false);
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  const [desktopPanelOpen, setDesktopPanelOpen] = useState(false);
+  const [dismissedBannerType, setDismissedBannerType] = useState<string | null>(null);
+  const [mockStatus, setMockStatus] = useState({
+    mockLLM: false,
+    mockTools: false
+  });
+
+  const mockBannerType = useMemo(() => {
+    if (mockStatus.mockLLM && mockStatus.mockTools) return "both";
+    if (mockStatus.mockLLM) return "llm";
+    if (mockStatus.mockTools) return "tools";
+    return "none";
+  }, [mockStatus]);
+
+  const mockBannerMessage = useMemo(() => {
+    if (mockBannerType === "llm") return "LLM in mock mode (Gemini unavailable).";
+    if (mockBannerType === "tools") return "Tools in mock mode (MCP unavailable).";
+    if (mockBannerType === "both") return "LLM + tools in mock mode.";
+    return "";
+  }, [mockBannerType]);
+
+  const showMockBanner = mockBannerType !== "none" && dismissedBannerType !== mockBannerType;
 
   useEffect(() => {
+    const dismissed = window.localStorage.getItem(MOCK_BANNER_DISMISS_KEY);
+    setDismissedBannerType(dismissed);
+
     fetch("/api/status")
       .then((res) => res.json())
-      .then((data) => setMockBanner(data.mockLLM || data.mockTools))
+      .then((data) =>
+        setMockStatus({
+          mockLLM: Boolean(data.mockLLM),
+          mockTools: Boolean(data.mockTools)
+        })
+      )
       .catch(() => undefined);
   }, []);
 
@@ -134,7 +170,10 @@ export default function RoomPage() {
       }>;
     },
     onSuccess: (data) => {
-      setMockBanner(Boolean(data.mockMode));
+      setMockStatus((previous) => ({
+        ...previous,
+        mockLLM: previous.mockLLM || Boolean(data.mockMode)
+      }));
       queryClient.invalidateQueries({ queryKey: ["messages", code] });
       if (data.artifacts?.meetingProposals) {
         setMeetingSlots(
@@ -147,7 +186,7 @@ export default function RoomPage() {
     },
     onError: () => {
       toast({ title: "Assistant unavailable", description: "Showing mock response." });
-      setMockBanner(true);
+      setMockStatus((previous) => ({ ...previous, mockLLM: true }));
     }
   });
 
@@ -180,40 +219,77 @@ export default function RoomPage() {
     return null;
   }
 
+  const dismissMockBanner = () => {
+    if (mockBannerType === "none") return;
+    window.localStorage.setItem(MOCK_BANNER_DISMISS_KEY, mockBannerType);
+    setDismissedBannerType(mockBannerType);
+  };
+
   return (
     <div className="flex h-screen flex-col bg-background">
-      <Suspense fallback={null}><PanelParamReader /></Suspense>
-      <Topbar onOpenSidebar={() => setSidebarOpen(true)} onOpenPanel={() => setPanelOpen(true)} />
-      {mockBanner ? (
-        <div className="bg-amber-100 px-4 py-2 text-sm text-amber-800">
-          Mock mode: GEMINI_API_KEY or MCP_SERVER_URL missing. Responses and tool calls are simulated.
-        </div>
-      ) : null}
-      <div className="flex flex-1 overflow-hidden">
+      <Suspense fallback={null}>
+        <PanelParamReader onPanelDetected={() => setDesktopPanelOpen(true)} />
+      </Suspense>
+      <Topbar
+        onOpenSidebar={() => setSidebarOpen(true)}
+        onTogglePanel={() => setDesktopPanelOpen((open) => !open)}
+        onOpenMobilePanel={() => setMobilePanelOpen(true)}
+        panelOpen={desktopPanelOpen}
+      />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex flex-1 flex-col gap-4 overflow-hidden p-4 lg:p-6">
-          <div className="rounded-2xl border border-border bg-card/70 p-4 shadow-soft">
-            <div className="flex flex-col gap-2">
-              <ModeChips mode={currentMode} onChange={handleModeChange} />
-              <p className="text-sm text-muted-foreground">{modeDescriptions[currentMode]}</p>
+        <main className="flex min-h-0 flex-1 flex-col">
+          {showMockBanner ? (
+            <div className="mx-auto mt-3 w-full max-w-4xl px-4">
+              <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <p>{mockBannerMessage}</p>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={dismissMockBanner}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
-          </div>
-
-          {listMessages.length === 0 ? (
-            <EmptyState
-              title="Start by telling the assistant your goal"
-              description="Try Brainstorm mode if you want guided questions."
-              actionLabel="Try Brainstorm mode"
-              onAction={() => handleModeChange("brainstorm", "Brainstorm")}
-            />
           ) : (
-            <MessageList messages={listMessages} />
+            <div className="pt-3" />
           )}
+          <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4">
+            <div className="flex items-center justify-between py-3">
+              <div className="min-w-0">
+                <ModeChips mode={currentMode} onChange={handleModeChange} />
+                <p className="mt-2 text-xs text-muted-foreground">{modeDescriptions[currentMode]}</p>
+              </div>
+              <div className="flex items-center gap-2 lg:hidden">
+                <Button variant="outline" size="icon" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar">
+                  <Menu className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="icon" onClick={() => setMobilePanelOpen(true)} aria-label="Open panel">
+                  <PanelRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
 
-          <Composer onSend={handleSend} disabled={sendMutation.isPending} />
-          <ToolStatus actions={toolActions} />
+            {listMessages.length === 0 ? (
+              <div className="flex min-h-0 flex-1 items-center">
+                <EmptyState
+                  title="Start by telling the assistant your goal"
+                  description="Try Brainstorm mode if you want guided questions."
+                  actionLabel="Try Brainstorm mode"
+                  onAction={() => handleModeChange("brainstorm", "Brainstorm")}
+                />
+              </div>
+            ) : (
+              <MessageList messages={listMessages} />
+            )}
+
+            <Composer
+              onSend={handleSend}
+              disabled={sendMutation.isPending}
+              showPresets={listMessages.length === 0}
+            />
+          </div>
         </main>
-        <RightPanel />
+        {desktopPanelOpen ? (
+          <RightPanel className="hidden lg:flex" onClose={() => setDesktopPanelOpen(false)} />
+        ) : null}
       </div>
 
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
@@ -225,13 +301,13 @@ export default function RoomPage() {
         </SheetContent>
       </Sheet>
 
-      <Sheet open={panelOpen} onOpenChange={setPanelOpen}>
+      <Sheet open={mobilePanelOpen} onOpenChange={setMobilePanelOpen}>
         <SheetTrigger asChild>
           <div />
         </SheetTrigger>
         <SheetContent side="right" className="p-0">
           <div className="h-full">
-            <RightPanel className="flex w-full" />
+            <RightPanel className="flex h-full w-full" onClose={() => setMobilePanelOpen(false)} />
           </div>
         </SheetContent>
       </Sheet>

@@ -25,7 +25,14 @@ export async function GET(
       messages: messages.map((m) => ({
         id: m.id,
         role: m.senderType,
-        sender: m.senderUser?.name ?? m.senderUser?.email ?? "System",
+        sender:
+          m.senderType === "assistant"
+            ? "Assistant"
+            : m.senderType === "tool"
+              ? "Tool"
+              : m.senderType === "system"
+                ? "System"
+                : (m.senderUser?.name ?? m.senderUser?.email ?? "You"),
         content: m.content,
         mode: m.mode,
         metadata: m.metadata,

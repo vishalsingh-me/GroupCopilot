@@ -22,7 +22,9 @@ const modes: Array<{ mode: Mode; label: string; icon: ComponentType<{ className?
 export default function ModeChips({ mode, onChange }: ModeChipsProps) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Badge variant="outline">Mode: {mode}</Badge>
+      <Badge variant="outline" className="rounded-full border-border/80 bg-background text-[11px] capitalize">
+        Mode: {mode}
+      </Badge>
       {modes.map((item) => {
         const Icon = item.icon;
         return (
@@ -30,6 +32,7 @@ export default function ModeChips({ mode, onChange }: ModeChipsProps) {
             key={item.label}
             variant={mode === item.mode ? "secondary" : "outline"}
             size="sm"
+            className="rounded-full"
             onClick={() => onChange(item.mode, item.label)}
           >
             <Icon className="h-4 w-4" />
