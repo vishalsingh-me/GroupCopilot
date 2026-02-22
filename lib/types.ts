@@ -1,23 +1,5 @@
 export type Profile = { name: string; role?: string; };
 
-export const ALLOWED_MODES = [
-  "brainstorm",
-  "clarify",
-  "tickets",
-  "schedule",
-  "conflict"
-] as const;
-
-export type Mode = (typeof ALLOWED_MODES)[number];
-
-export function isMode(value: unknown): value is Mode {
-  return typeof value === "string" && ALLOWED_MODES.includes(value as Mode);
-}
-
-export function normalizeMode(value: unknown, fallback: Mode = "brainstorm"): Mode {
-  return isMode(value) ? value : fallback;
-}
-
 export type MessageRole = "assistant" | "user" | "system" | "tool";
 
 export type Message = {
@@ -25,10 +7,21 @@ export type Message = {
   role: MessageRole;
   sender: string;
   content: string;
-  mode: Mode;
+  mode?: string;
+  threadId?: string | null;
   metadata?: unknown;
   createdAt: string;
   timestamp?: string;
+};
+
+export type ConversationThread = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt: string;
+  summary?: string | null;
+  summaryUpdatedAt?: string | null;
 };
 
 export type RoomMember = {

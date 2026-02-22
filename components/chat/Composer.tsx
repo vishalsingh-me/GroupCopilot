@@ -12,11 +12,11 @@ type ComposerProps = {
 };
 
 const presets = [
-  "Help us pick a project idea",
-  "Ask us questions to clarify requirements",
-  "Turn our plan into tickets",
-  "Schedule a meeting",
-  "We have a conflict, help us resolve it"
+  "Hi, can you help us plan this week?",
+  "We're behind schedule. What should we do next?",
+  "Can you review our plan and flag the biggest risks?",
+  "We disagree on priorities. Help us mediate neutrally.",
+  "Suggest a concise action plan for the next 3 days."
 ];
 
 export default function Composer({ onSend, disabled, showPresets = false }: ComposerProps) {

@@ -54,6 +54,12 @@ enum VoteChoice {
   request_change
 }
 
+enum ProjectCadence {
+  daily
+  weekly
+  monthly
+}
+
 // ─── Core Tables ─────────────────────────────────────────────────────────────
 
 model User {
@@ -66,8 +72,10 @@ model User {
 
   rooms         RoomMember[]
   messages      Message[]
+  conversationThreads ConversationThread[]
   approvalVotes ApprovalVote[]
   auditLogs     AuditLog[]
+  createdPlans  ProjectPlan[]
 }
 
 model Room {
@@ -81,11 +89,15 @@ model Room {
   createdAt     DateTime @default(now())
 
   members          RoomMember[]
+  threads          ConversationThread[]
   messages         Message[]
   agentSessions    AgentSession[]
   auditLogs        AuditLog[]
   healthSnapshots  HealthSnapshot[]
   trelloCardCache  TrelloCardCache[]
+  projectPlan      ProjectPlan?
+  milestones       Milestone[]
+  checkInEvents    CheckInEvent[]
 }
 
 model RoomMember {
@@ -105,6 +117,8 @@ model Message {
   id           String     @id @default(cuid())
   room         Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
   roomId       String
+  thread       ConversationThread? @relation(fields: [threadId], references: [id], onDelete: SetNull)
+  threadId     String?
   senderType   SenderType
   senderUser   User?      @relation(fields: [senderUserId], references: [id], onDelete: SetNull)
   senderUserId String?
@@ -112,6 +126,25 @@ model Message {
   mode         Mode
   metadata     Json?
   createdAt    DateTime   @default(now())
+
+  @@index([roomId, threadId, createdAt])
+}
+
+model ConversationThread {
+  id              String   @id @default(cuid())
+  room            Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId          String
+  title           String   @default("Conversation 1")
+  createdByUser   User     @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  createdByUserId String
+  summary         String?
+  summaryUpdatedAt DateTime?
+  lastMessageAt   DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  messages        Message[]
+
+  @@index([roomId, lastMessageAt])
 }
 
 // ─── Agent Session ────────────────────────────────────────────────────────────
@@ -205,4 +238,53 @@ model TrelloCardCache {
   status        String    // Trello list name (e.g. "To Do", "In Progress", "Done")
   dueDate       DateTime?
   lastSyncedAt  DateTime  @default(now())
+}
+
+// ─── Project Planner ──────────────────────────────────────────────────────────
+
+model ProjectPlan {
+  id              String         @id @default(cuid())
+  room            Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId          String         @unique
+  title           String
+  description     String
+  deadlineAt      DateTime
+  cadence         ProjectCadence
+  checkInTime     String         // "HH:MM"
+  timezone        String
+  createdByUser   User           @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdByUserId String
+  milestones      Milestone[]
+  checkInEvents   CheckInEvent[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model Milestone {
+  id        String      @id @default(cuid())
+  room      Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId    String
+  plan      ProjectPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId    String
+  index     Int
+  title     String
+  startAt   DateTime
+  dueAt     DateTime
+  checkInEvents CheckInEvent[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@unique([planId, index])
+}
+
+model CheckInEvent {
+  id          String      @id @default(cuid())
+  room        Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId      String
+  plan        ProjectPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId      String
+  milestone   Milestone   @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  milestoneId String      @unique
+  scheduledAt DateTime
+  createdAt   DateTime    @default(now())
 }

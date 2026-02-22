@@ -89,7 +89,7 @@ export default function BoardPage() {
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href={`/room/${code}`}>
+            <Link href={`/room/${code}/chat`}>
               <Button variant="ghost" size="sm">
                 <ArrowLeft className="mr-1.5 h-4 w-4" />
                 Back to chat

@@ -35,6 +35,7 @@ export default function MarketingPage() {
     setLoading(true);
     const response = await fetch("/api/rooms", {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: roomName || undefined })
     });
@@ -51,6 +52,7 @@ export default function MarketingPage() {
     setLoading(true);
     const response = await fetch("/api/rooms/join", {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code })
     });
