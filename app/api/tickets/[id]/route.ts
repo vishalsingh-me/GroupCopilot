@@ -10,10 +10,10 @@ const UpdateSchema = z.object({
 
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  ctx: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
+    const { id } = await ctx.params;
     const existing = await prisma.ticket.findUnique({
       where: { id },
       include: { room: true }

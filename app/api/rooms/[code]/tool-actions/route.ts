@@ -13,10 +13,10 @@ const CreateActionSchema = z.object({
 
 export async function GET(
   _req: Request,
-  { params }: { params: Promise<{ code: string }> }
+  ctx: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { code } = await params;
+    const { code } = await ctx.params;
     const { room } = await requireRoomMember(code.toUpperCase());
     const actions = await prisma.toolAction.findMany({
       where: { roomId: room.id },
@@ -31,10 +31,10 @@ export async function GET(
 
 export async function POST(
   req: Request,
-  { params }: { params: Promise<{ code: string }> }
+  ctx: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { code } = await params;
+    const { code } = await ctx.params;
     const { user, room } = await requireRoomMember(code.toUpperCase());
     const body = CreateActionSchema.parse(await req.json());
 

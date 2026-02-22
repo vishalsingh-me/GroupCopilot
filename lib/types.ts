@@ -1,6 +1,22 @@
 export type Profile = { name: string; role?: string; };
 
-export type Mode = "brainstorm" | "clarify" | "tickets" | "schedule" | "conflict";
+export const ALLOWED_MODES = [
+  "brainstorm",
+  "clarify",
+  "tickets",
+  "schedule",
+  "conflict"
+] as const;
+
+export type Mode = (typeof ALLOWED_MODES)[number];
+
+export function isMode(value: unknown): value is Mode {
+  return typeof value === "string" && ALLOWED_MODES.includes(value as Mode);
+}
+
+export function normalizeMode(value: unknown, fallback: Mode = "brainstorm"): Mode {
+  return isMode(value) ? value : fallback;
+}
 
 export type MessageRole = "assistant" | "user" | "system" | "tool";
 
