@@ -24,6 +24,13 @@ export async function GET(
           id: detailed.id,
           code: detailed.code,
           name: detailed.name,
+          trelloBoardId: detailed.trelloBoardId,
+          trelloBoardShortLink: detailed.trelloBoardShortLink,
+          trelloBoardUrl: detailed.trelloBoardShortLink
+            ? `https://trello.com/b/${detailed.trelloBoardShortLink}`
+            : detailed.trelloBoardId
+            ? `https://trello.com/b/${detailed.trelloBoardId}`
+            : null,
           members: detailed.members.map((m) => ({
             id: m.user.id,
             name: m.user.name ?? m.user.email,

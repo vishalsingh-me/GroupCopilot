@@ -10,6 +10,14 @@ import { useSession } from "next-auth/react";
 import { useToast } from "@/components/common/use-toast";
 import { useState } from "react";
 
+type NavItem = {
+  label: string;
+  href: string;
+  panel?: string | null;
+  external?: boolean;
+  title?: string;
+};
+
 export default function Sidebar({ className }: { className?: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -19,8 +27,19 @@ export default function Sidebar({ className }: { className?: string }) {
   const [copied, setCopied] = useState(false);
   const roomPath = room ? `/room/${room.code}` : "/room";
   const activePanel = searchParams.get("panel");
-  const navItems = [
+  const trelloBoardUrl =
+    room?.trelloBoardUrl ??
+    (room?.trelloBoardShortLink ? `https://trello.com/b/${room.trelloBoardShortLink}` : null) ??
+    (room?.trelloBoardId ? `https://trello.com/b/${room.trelloBoardId}` : null);
+
+  const navItems: NavItem[] = [
     { label: "Chat", href: roomPath, panel: null },
+    {
+      label: "Trello",
+      href: trelloBoardUrl ?? "/settings",
+      external: Boolean(trelloBoardUrl),
+      title: trelloBoardUrl ? "Open Trello board" : "Connect Trello in Settings"
+    },
     { label: "Tickets", href: `${roomPath}?panel=tickets`, panel: "tickets" },
     { label: "Meetings", href: `${roomPath}?panel=meetings`, panel: "meetings" },
     { label: "Guide", href: `${roomPath}?panel=guide`, panel: "guide" },
@@ -69,18 +88,36 @@ export default function Sidebar({ className }: { className?: string }) {
       </div>
       <nav className="flex flex-col gap-2">
         {navItems.map((item) => {
-          const isActive = item.panel
-            ? pathname === roomPath && activePanel === item.panel
-            : pathname === item.href && activePanel === null;
+          const isActive = item.external
+            ? false
+            : item.panel !== undefined
+              ? item.panel
+                ? pathname === roomPath && activePanel === item.panel
+                : pathname === item.href && activePanel === null
+              : pathname === item.href;
+
+          const linkClassName = cn(
+            "rounded-lg px-3 py-2 text-sm font-medium transition",
+            isActive ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground"
+          );
+
+          if (item.external) {
+            return (
+              <a
+                key={item.label}
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={item.title}
+                className={linkClassName}
+              >
+                {item.label}
+              </a>
+            );
+          }
+
           return (
-            <Link
-              key={item.label}
-              href={item.href}
-              className={cn(
-                "rounded-lg px-3 py-2 text-sm font-medium transition",
-                isActive ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground"
-              )}
-            >
+            <Link key={item.label} href={item.href} title={item.title} className={linkClassName}>
               {item.label}
             </Link>
           );

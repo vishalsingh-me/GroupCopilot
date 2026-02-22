@@ -6,7 +6,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { generateFromPrompt } from "@/lib/llm/gemini";
-import { createCard, getListNameMap, isTrelloConfigured } from "@/lib/trello/client";
+import { createCard, getBoardLists, isTrelloConfigured, TrelloApiError } from "@/lib/trello/client";
 import { extractJSON, tryParseTasksJson } from "./parseUtils";
 import {
   AgentSession,
@@ -247,10 +247,11 @@ async function handleApprovalResponse(
 
   if (type === "TASK_PLAN") {
     const updated = await advanceSession(args.session.id, "TRELLO_PUBLISH");
+    const publishResult = await dispatch({ ...args, session: updated });
     return {
-      text: `Task plan approved! I'll now publish the cards to Trello...`,
-      mockMode: false,
-      newState: "TRELLO_PUBLISH",
+      text: `Task plan approved! Publishing to Trello now.\n\n${publishResult.text}`,
+      mockMode: publishResult.mockMode,
+      newState: publishResult.newState,
     };
   }
 
@@ -370,6 +371,7 @@ async function handleTaskProposals(args: DispatchArgs): Promise<DispatchResult> 
 
 
 async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> {
+  const FAILURE_TEXT = "Trello publish failed — check Trello connection in Settings.";
   const data = args.session.data as SessionData;
   const proposals = data.taskProposals ?? [];
 
@@ -379,21 +381,75 @@ async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> 
     return dispatch({ ...args, session: updated });
   }
 
-  // Load the room to get the Trello list ID
+  // Load the room to get Trello board/list configuration
   const room = await prisma.room.findUniqueOrThrow({ where: { id: args.roomId } });
 
-  if (!room.trelloListId || !isTrelloConfigured()) {
-    // Trello not connected — surface tasks as a message and advance to MONITOR
-    const taskLines = proposals
-      .map((t, i) => `${i + 1}. **${t.title}**${t.suggestedOwnerName ? ` _(${t.suggestedOwnerName})_` : ""}: ${t.description}`)
-      .join("\n");
+  if (!isTrelloConfigured()) {
     await advanceSession(args.session.id, "MONITOR", { publishedCardIds: [] });
-    await writeAuditLog(args.roomId, "trello_publish_skipped", { reason: "Trello not configured" });
+    await writeAuditLog(args.roomId, "trello_publish_failed", { reason: "TRELLO_NOT_CONFIGURED" });
     return {
-      text: `Trello isn't connected yet, so I can't publish automatically. Here are the approved tasks for your reference:\n\n${taskLines}\n\nConnect a Trello board in Settings to enable automatic publishing.`,
+      text: FAILURE_TEXT,
       mockMode: true,
       newState: "MONITOR",
     };
+  }
+
+  if (!room.trelloBoardId) {
+    await advanceSession(args.session.id, "MONITOR", { publishedCardIds: [] });
+    await writeAuditLog(args.roomId, "trello_publish_failed", { reason: "MISSING_BOARD_ID" });
+    return {
+      text: FAILURE_TEXT,
+      mockMode: true,
+      newState: "MONITOR",
+    };
+  }
+
+  let boardLists: Array<{ id: string; name: string }> = [];
+  try {
+    boardLists = await getBoardLists(room.trelloBoardId);
+  } catch (error) {
+    await advanceSession(args.session.id, "MONITOR", { publishedCardIds: [] });
+    await writeAuditLog(args.roomId, "trello_publish_failed", {
+      reason: "LIST_FETCH_FAILED",
+      error: safeTrelloError(error),
+    });
+    return {
+      text: FAILURE_TEXT,
+      mockMode: true,
+      newState: "MONITOR",
+    };
+  }
+
+  if (boardLists.length === 0) {
+    await advanceSession(args.session.id, "MONITOR", { publishedCardIds: [] });
+    await writeAuditLog(args.roomId, "trello_publish_failed", { reason: "NO_OPEN_LISTS" });
+    return {
+      text: FAILURE_TEXT,
+      mockMode: true,
+      newState: "MONITOR",
+    };
+  }
+
+  let publishList = boardLists[0];
+  if (room.trelloListId) {
+    const storedList = boardLists.find((list) => list.id === room.trelloListId);
+    if (!storedList) {
+      await advanceSession(args.session.id, "MONITOR", { publishedCardIds: [] });
+      await writeAuditLog(args.roomId, "trello_publish_failed", {
+        reason: "INVALID_STORED_LIST_ID",
+        storedListId: room.trelloListId,
+      });
+      return {
+        text: FAILURE_TEXT,
+        mockMode: true,
+        newState: "MONITOR",
+      };
+    }
+    publishList = storedList;
+  } else {
+    publishList =
+      boardLists.find((list) => list.name.trim().toLowerCase() === "this week") ??
+      boardLists[0];
   }
 
   // Build a Trello member ID map from RoomMember.trelloMemberId
@@ -403,52 +459,91 @@ async function handleTrelloPublish(args: DispatchArgs): Promise<DispatchResult> 
     if (m.trelloMemberId) trelloMemberMap[m.userId] = m.trelloMemberId;
   }
 
+  const listNameMap = Object.fromEntries(boardLists.map((list) => [list.id, list.name]));
+  const approvedAtIso = new Date().toISOString();
+
   // Publish each task as a Trello card
   const publishedCardIds: string[] = [];
   const lines: string[] = [];
-  const listNameMap = await getListNameMap(room.trelloBoardId!).catch((): Record<string, string> => ({}));
+  const failed: Array<{ title: string; error: ReturnType<typeof safeTrelloError> }> = [];
 
   for (const proposal of proposals) {
     try {
       const idMembers = proposal.suggestedOwnerUserId
         ? [trelloMemberMap[proposal.suggestedOwnerUserId]].filter(Boolean)
         : [];
-
-      const card = await createCard(room.trelloListId!, proposal.title, proposal.description, idMembers);
+      const due = normalizeDueDate(proposal.due);
+      const card = await createCard(
+        publishList.id,
+        proposal.title,
+        formatCardDescription(proposal, approvedAtIso),
+        idMembers,
+        due ?? undefined
+      );
 
       // Cache the card locally
       await prisma.trelloCardCache.upsert({
         where: { trelloCardId: card.id },
         update: {
           title: card.name,
-          status: listNameMap[card.idList] ?? "To Do",
+          status: listNameMap[card.idList] ?? publishList.name,
+          dueDate: card.due ? new Date(card.due) : null,
           lastSyncedAt: new Date(),
         },
         create: {
           roomId: args.roomId,
           trelloCardId: card.id,
           title: card.name,
-          status: listNameMap[card.idList] ?? "To Do",
+          status: listNameMap[card.idList] ?? publishList.name,
+          dueDate: card.due ? new Date(card.due) : null,
         },
       });
 
       publishedCardIds.push(card.id);
       lines.push(`✓ **${proposal.title}**${proposal.suggestedOwnerName ? ` → ${proposal.suggestedOwnerName}` : ""}`);
-    } catch (err) {
-      console.error(`Failed to create Trello card for "${proposal.title}":`, err);
-      lines.push(`✗ **${proposal.title}** (failed — check Trello credentials)`);
+    } catch (error) {
+      const safeError = safeTrelloError(error);
+      console.error(`Failed to create Trello card for "${proposal.title}":`, error);
+      failed.push({ title: proposal.title, error: safeError });
+      lines.push(`✗ **${proposal.title}** (failed)`);
     }
   }
 
   await advanceSession(args.session.id, "MONITOR", { publishedCardIds });
+
+  if (failed.length > 0) {
+    await writeAuditLog(args.roomId, "trello_publish_failed", {
+      reason: "CARD_CREATE_FAILED",
+      boardId: room.trelloBoardId,
+      listId: publishList.id,
+      publishedCount: publishedCardIds.length,
+      failed,
+      weekNumber: args.session.weekNumber,
+    });
+    return {
+      text:
+        `${FAILURE_TEXT}\n\n` +
+        `Published ${publishedCardIds.length}/${proposals.length} card(s) to **${publishList.name}**.\n\n` +
+        `${lines.join("\n")}`,
+      mockMode: true,
+      newState: "MONITOR",
+    };
+  }
+
   await writeAuditLog(args.roomId, "trello_cards_published", {
+    boardId: room.trelloBoardId,
+    listId: publishList.id,
+    listName: publishList.name,
     count: publishedCardIds.length,
     cardIds: publishedCardIds,
     weekNumber: args.session.weekNumber,
   });
 
   return {
-    text: `Published ${publishedCardIds.length}/${proposals.length} cards to Trello:\n\n${lines.join("\n")}\n\nI'll check in throughout the week if anything stalls.`,
+    text:
+      `Published ${publishedCardIds.length}/${proposals.length} cards to Trello list **${publishList.name}**:\n\n` +
+      `${lines.join("\n")}\n\n` +
+      `I'll check in throughout the week if anything stalls.`,
     mockMode: false,
     newState: "MONITOR",
   };
@@ -523,3 +618,59 @@ async function getRecentMessageTexts(roomId: string, limit: number): Promise<str
     .map((m) => `${m.senderUser?.name ?? m.senderType}: ${m.content}`);
 }
 
+function safeTrelloError(error: unknown): { code: string; httpStatus?: number; message: string } {
+  if (error instanceof TrelloApiError) {
+    return {
+      code: error.code,
+      httpStatus: error.httpStatus,
+      message: error.message.slice(0, 220),
+    };
+  }
+  if (error instanceof Error) {
+    return {
+      code: "UNKNOWN",
+      message: error.message.slice(0, 220),
+    };
+  }
+  return {
+    code: "UNKNOWN",
+    message: String(error).slice(0, 220),
+  };
+}
+
+function normalizeDueDate(value?: string | null): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function formatCardDescription(proposal: TaskProposal, approvedAtIso: string): string {
+  const lines: string[] = [];
+  lines.push(proposal.description?.trim() || "No additional description provided.");
+  lines.push("");
+
+  const acceptanceCriteria = proposal.acceptanceCriteria?.filter(Boolean) ?? [];
+  lines.push("Acceptance criteria:");
+  if (acceptanceCriteria.length === 0) {
+    lines.push("- None specified");
+  } else {
+    for (const criterion of acceptanceCriteria) lines.push(`- ${criterion}`);
+  }
+  lines.push("");
+
+  const dependencies = proposal.dependencies?.filter(Boolean) ?? [];
+  lines.push("Dependencies:");
+  if (dependencies.length === 0) {
+    lines.push("- None");
+  } else {
+    for (const dependency of dependencies) lines.push(`- ${dependency}`);
+  }
+  lines.push("");
+
+  lines.push(`Suggested owner: ${proposal.suggestedOwnerName ?? "Unassigned"}`);
+  lines.push(`Effort: ${proposal.effort ?? "Not specified"}`);
+  lines.push(`Approved by Gate 2 at: ${approvedAtIso}`);
+
+  return lines.join("\n").trim();
+}
