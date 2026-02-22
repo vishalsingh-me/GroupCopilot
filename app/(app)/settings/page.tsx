@@ -9,9 +9,21 @@ import { Input } from "@/components/ui/input";
 import { useRoomStore } from "@/lib/store";
 import { useToast } from "@/components/common/use-toast";
 
-type TrelloStatus =
-  | { connected: false; trelloConfigured: boolean }
-  | { connected: true; boardId: string; listId: string; trelloConfigured: boolean };
+type TrelloList = {
+  id: string;
+  name: string;
+};
+
+type TrelloStatus = {
+  connected: boolean;
+  configured?: boolean;
+  trelloConfigured?: boolean;
+  boardId?: string;
+  boardShortLink?: string;
+  boardUrl?: string;
+  listId?: string | null;
+  lists?: TrelloList[];
+};
 
 export default function SettingsPage() {
   const { resetState, room } = useRoomStore();
@@ -20,7 +32,7 @@ export default function SettingsPage() {
   const code = room?.code;
 
   const [boardId, setBoardId] = useState("");
-  const [listId, setListId] = useState("");
+  const [selectedListId, setSelectedListId] = useState("");
 
   const statusQuery = useQuery({
     queryKey: ["status"],
@@ -41,12 +53,27 @@ export default function SettingsPage() {
     enabled: Boolean(code)
   });
 
+  const boardPreviewQuery = useQuery({
+    queryKey: ["trello-board-preview", code, boardId.trim()],
+    queryFn: async () => {
+      const res = await fetch(`/api/rooms/${code}/trello?boardId=${encodeURIComponent(boardId.trim())}`);
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload?.error ?? "Failed to load board lists");
+      return payload as TrelloStatus;
+    },
+    enabled: Boolean(code && boardId.trim()),
+    retry: false,
+  });
+
   const connectMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/rooms/${code}/trello`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ boardId: boardId.trim(), listId: listId.trim() })
+        body: JSON.stringify({
+          boardId: boardId.trim(),
+          listId: selectedListId || undefined,
+        })
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -58,7 +85,7 @@ export default function SettingsPage() {
       toast({ title: "Trello connected" });
       queryClient.invalidateQueries({ queryKey: ["trello-status", code] });
       setBoardId("");
-      setListId("");
+      setSelectedListId("");
     },
     onError: (err: Error) => {
       toast({ title: "Connection failed", description: err.message });
@@ -77,6 +104,14 @@ export default function SettingsPage() {
   });
 
   const trello = trelloQuery.data;
+  const trelloConfigured = Boolean(trello?.trelloConfigured ?? trello?.configured);
+  const previewLists = boardPreviewQuery.data?.lists ?? [];
+  const canSubmitConnect =
+    Boolean(boardId.trim()) &&
+    !connectMutation.isPending &&
+    !boardPreviewQuery.isLoading &&
+    !boardPreviewQuery.isError &&
+    previewLists.length > 0;
 
   return (
     <main className="min-h-screen bg-background px-6 py-10">
@@ -110,23 +145,33 @@ export default function SettingsPage() {
             <p className="text-xs text-muted-foreground">
               Join or create a room first to connect Trello.
             </p>
-          ) : !trello?.trelloConfigured ? (
+          ) : !trelloConfigured ? (
             <p className="text-xs text-muted-foreground">
               Trello API credentials are not configured on this server.
               Add <code className="font-mono">TRELLO_API_KEY</code> and{" "}
               <code className="font-mono">TRELLO_TOKEN</code> to your environment.
             </p>
-          ) : trello.connected ? (
+          ) : trello?.connected ? (
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-1.5 text-xs text-green-700 dark:text-green-400">
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 Connected to board
               </div>
               <p className="text-xs text-muted-foreground font-mono">
-                Board: {trello.boardId}
+                Board: {trello?.boardId ?? "—"}
               </p>
+              {trello?.boardUrl ? (
+                <a
+                  href={trello?.boardUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary underline underline-offset-2"
+                >
+                  Open Trello board
+                </a>
+              ) : null}
               <p className="text-xs text-muted-foreground font-mono">
-                List: {trello.listId}
+                List: {trello?.listId ?? "Auto (This Week / first open list)"}
               </p>
               <Button
                 variant="destructive"
@@ -145,26 +190,51 @@ export default function SettingsPage() {
                 Not connected for room <span className="font-mono font-medium">{code}</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Find your Board ID and List ID in the Trello URL:{" "}
+                Enter your Trello board ID or shortLink from the Trello URL:{" "}
                 <span className="font-mono">trello.com/b/&lt;boardId&gt;/...</span>.
-                Open a card, click Share, and copy the short link to find the list ID.
+                We'll fetch available lists and let you choose from a dropdown.
               </p>
               <div className="flex flex-col gap-2">
                 <Input
-                  placeholder="Trello board ID (e.g. abc12345)"
+                  placeholder="Trello board ID or shortLink (e.g. 699a... or VCx6xawE)"
                   value={boardId}
-                  onChange={(e) => setBoardId(e.target.value)}
+                  onChange={(e) => {
+                    setBoardId(e.target.value);
+                    setSelectedListId("");
+                  }}
                 />
-                <Input
-                  placeholder="Trello list ID (e.g. 64a1b2c3d4e5f6a7b8c9d0e1)"
-                  value={listId}
-                  onChange={(e) => setListId(e.target.value)}
-                />
+
+                {boardId.trim() ? (
+                  boardPreviewQuery.isLoading ? (
+                    <p className="text-xs text-muted-foreground">Loading board lists…</p>
+                  ) : boardPreviewQuery.isError ? (
+                    <p className="text-xs text-destructive">
+                      {(boardPreviewQuery.error as Error).message}
+                    </p>
+                  ) : (
+                    <>
+                      <label className="text-xs font-medium text-muted-foreground">Publish list</label>
+                      <select
+                        value={selectedListId}
+                        onChange={(e) => setSelectedListId(e.target.value)}
+                        className="h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="">Auto (This Week, else first open list)</option>
+                        {previewLists.map((list) => (
+                          <option key={list.id} value={list.id}>
+                            {list.name}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )
+                ) : null}
+
                 <Button
                   size="sm"
                   className="w-fit"
                   onClick={() => connectMutation.mutate()}
-                  disabled={!boardId.trim() || !listId.trim() || connectMutation.isPending}
+                  disabled={!canSubmitConnect}
                 >
                   {connectMutation.isPending ? "Connecting…" : "Connect Trello"}
                 </Button>

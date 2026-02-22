@@ -76,6 +76,7 @@ model Room {
   name          String?
   projectGoal   String?
   trelloBoardId String?
+  trelloBoardShortLink String?
   trelloListId  String?
   createdAt     DateTime @default(now())
 

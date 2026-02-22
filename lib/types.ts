@@ -43,6 +43,9 @@ export type Room = {
   id: string;
   name?: string | null;
   code: string;
+  trelloBoardId?: string | null;
+  trelloBoardShortLink?: string | null;
+  trelloBoardUrl?: string | null;
   members: RoomMember[];
 };
 

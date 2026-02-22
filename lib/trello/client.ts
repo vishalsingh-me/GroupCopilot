@@ -90,6 +90,13 @@ export type TrelloMember = {
   email?: string;
 };
 
+export type TrelloBoard = {
+  id: string;
+  shortLink: string;
+  url: string;
+  name?: string;
+};
+
 export type TrelloWebhook = {
   id: string;
   callbackURL: string;
@@ -103,11 +110,14 @@ export async function createCard(
   listId: string,
   name: string,
   desc: string,
-  idMembers: string[] = []
+  idMembers: string[] = [],
+  due?: string
 ): Promise<TrelloCard> {
+  const payload: Record<string, unknown> = { idList: listId, name, desc, idMembers };
+  if (due) payload.due = due;
   return trelloFetch<TrelloCard>(`/cards?${qs()}`, {
     method: "POST",
-    body: JSON.stringify({ idList: listId, name, desc, idMembers }),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -137,6 +147,12 @@ export async function getListNameMap(boardId: string): Promise<Record<string, st
 
 export async function getBoardMembers(boardId: string): Promise<TrelloMember[]> {
   return trelloFetch<TrelloMember[]>(`/boards/${boardId}/members?${qs()}`);
+}
+
+export async function getBoard(boardRef: string): Promise<TrelloBoard> {
+  return trelloFetch<TrelloBoard>(
+    `/boards/${boardRef}?${qs({ fields: "id,shortLink,url,name" })}`
+  );
 }
 
 // ─── Webhooks ─────────────────────────────────────────────────────────────────
