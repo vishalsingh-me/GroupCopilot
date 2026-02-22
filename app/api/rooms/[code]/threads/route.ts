@@ -38,6 +38,15 @@ export async function GET(
       })),
     });
   } catch (error) {
+    if (isMissingConversationThreadTable(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "Conversation threads are not available yet. Run `npx prisma migrate deploy` to apply the latest schema.",
+        },
+        { status: 503 }
+      );
+    }
     console.error("[rooms/threads][GET] error", error);
     return NextResponse.json({ error: "Unable to load threads" }, { status: 400 });
   }
@@ -69,6 +78,15 @@ export async function POST(
       { status: 201 }
     );
   } catch (error) {
+    if (isMissingConversationThreadTable(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "Conversation threads are not available yet. Run `npx prisma migrate deploy` to apply the latest schema.",
+        },
+        { status: 503 }
+      );
+    }
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: "Invalid thread payload", issues: error.issues },
@@ -79,4 +97,14 @@ export async function POST(
     console.error("[rooms/threads][POST] error", error);
     return NextResponse.json({ error: "Unable to create thread" }, { status: 400 });
   }
+}
+
+function isMissingConversationThreadTable(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const maybe = error as { code?: string; meta?: { table?: string; modelName?: string } };
+  return (
+    maybe.code === "P2021" &&
+    (maybe.meta?.table === "public.ConversationThread" ||
+      maybe.meta?.modelName === "ConversationThread")
+  );
 }

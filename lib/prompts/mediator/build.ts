@@ -1,6 +1,7 @@
 import { conflictDeveloperPrompt } from "./conflict";
 import { pickConflictExample } from "./examples";
 import { mediatorSystemPrompt } from "./system";
+import { inferConflictType } from "./detect";
 
 export type ConflictPromptHistoryItem = {
   role: "user" | "assistant";
@@ -48,7 +49,9 @@ export function buildConflictPrompt({
   retrievedChunks = [],
   teamContext
 }: BuildConflictPromptArgs): string {
-  const inferredType = inferConflictType(`${userMessage}\n${history.map((h) => h.content).join("\n")}`);
+  const inferredType = inferConflictType(
+    `${userMessage}\n${history.map((h) => h.content).join("\n")}`
+  );
   const example = pickConflictExample(inferredType);
   const compactHistory = history
     .slice(-20)
@@ -107,31 +110,3 @@ export function buildConflictPrompt({
     "Final instruction: Return valid JSON only. No markdown. No explanation outside JSON."
   ].join("\n");
 }
-
-function inferConflictType(text: string): string {
-  const normalized = text.toLowerCase();
-  if (containsAny(normalized, ["timezone", "schedule", "standup", "async", "meeting"])) {
-    return "schedule_communication";
-  }
-  if (containsAny(normalized, ["workload", "unfair", "imbalance", "doing most", "ownership"])) {
-    return "workload_fairness";
-  }
-  if (containsAny(normalized, ["dismissed", "tone", "rude", "naive", "respect", "attacked"])) {
-    return "interpersonal_tone";
-  }
-  if (containsAny(normalized, ["priority", "goal", "direction", "scope"])) {
-    return "goals_priorities";
-  }
-  if (containsAny(normalized, ["decision", "tie", "vote", "deadlock"])) {
-    return "decision_process";
-  }
-  if (containsAny(normalized, ["role", "responsibility", "ownership unclear"])) {
-    return "role_ambiguity";
-  }
-  return "other";
-}
-
-function containsAny(source: string, needles: string[]): boolean {
-  return needles.some((needle) => source.includes(needle));
-}
-

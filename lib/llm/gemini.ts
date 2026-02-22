@@ -13,8 +13,9 @@ export type MockReason =
   | "invalid_response";
 
 // Read from env so the model can be overridden without a code change.
-// Default: gemini-2.5-flash (stable and widely available on v1beta).
-export const GEMINI_MODEL = (process.env.GEMINI_MODEL ?? "").trim() || "gemini-2.5-flash";
+// Default: gemini-3-flash. Fallback: gemini-2.5-flash.
+export const GEMINI_MODEL = (process.env.GEMINI_MODEL ?? "").trim() || "gemini-3-flash-preview";
+export const GEMINI_FALLBACK_MODELS = parseFallbackModels(process.env.GEMINI_FALLBACK_MODELS);
 
 export function getApiKey(): string | undefined {
   return process.env.GEMINI_API_KEY || undefined;
@@ -69,36 +70,61 @@ export async function generateTextFromPrompt(prompt: string): Promise<PromptGene
     return { text: "", mockMode: true, reason: "missing_key" };
   }
 
-  try {
-    const client = new GoogleGenerativeAI(apiKey);
-    const model = client.getGenerativeModel({ model: GEMINI_MODEL });
-    const generation = await model.generateContent(prompt);
-    const response = generation.response as GeminiResponseLike;
+  const client = new GoogleGenerativeAI(apiKey);
+  const modelsToTry = getModelsToTry();
+  let lastReason: MockReason = "gemini_error";
 
-    if (response?.promptFeedback?.blockReason) {
-      if (isDev) {
-        console.log("[llm] Gemini blocked response", response.promptFeedback.blockReason);
+  for (let index = 0; index < modelsToTry.length; index += 1) {
+    const modelName = modelsToTry[index];
+
+    try {
+      const model = client.getGenerativeModel({ model: modelName });
+      const generation = await model.generateContent(prompt);
+      const response = generation.response as GeminiResponseLike;
+
+      if (response?.promptFeedback?.blockReason) {
+        if (isDev) {
+          console.log("[llm] Gemini blocked response", {
+            model: modelName,
+            blockReason: response.promptFeedback.blockReason,
+          });
+        }
+        lastReason = "blocked_response";
+        continue;
       }
-      return { text: "", mockMode: true, reason: "blocked_response" };
-    }
 
-    const text = extractText(response);
-    if (!text) {
-      const hasCandidates = Boolean(response?.candidates?.length);
-      return {
-        text: "",
-        mockMode: true,
-        reason: hasCandidates ? "invalid_response" : "empty_response",
-      };
-    }
+      const text = extractText(response);
+      if (!text) {
+        const hasCandidates = Boolean(response?.candidates?.length);
+        lastReason = hasCandidates ? "invalid_response" : "empty_response";
+        continue;
+      }
 
-    return { text, mockMode: false };
-  } catch (error) {
-    if (isDev) {
-      console.error("[llm] Gemini error (exception)", getGeminiErrorMeta(error));
+      if (isDev && index > 0) {
+        console.warn("[llm] Gemini fallback model succeeded", {
+          primaryModel: GEMINI_MODEL,
+          selectedModel: modelName,
+        });
+      }
+      return { text, mockMode: false };
+    } catch (error) {
+      const retryable = isRetryableModelError(error);
+      lastReason = "gemini_error";
+      if (isDev) {
+        console.error("[llm] Gemini error (exception)", {
+          model: modelName,
+          retryable,
+          meta: getGeminiErrorMeta(error),
+        });
+      }
+
+      if (!retryable || index === modelsToTry.length - 1) {
+        break;
+      }
     }
-    return { text: "", mockMode: true, reason: "gemini_error" };
   }
+
+  return { text: "", mockMode: true, reason: lastReason };
 }
 
 export async function generatePlanCopilotReply(
@@ -134,17 +160,11 @@ export async function generateFromPrompt(
   prompt: string,
   fallbackText: string
 ): Promise<{ text: string; mockMode: boolean }> {
-  const model = getClient();
-  if (!model) return { text: fallbackText, mockMode: true };
-
-  try {
-    const result = await model.generateContent(prompt);
-    const text = result.response.text()?.trim() ?? fallbackText;
-    return { text, mockMode: false };
-  } catch (error) {
-    console.error("Gemini error:", error);
-    return { text: fallbackText, mockMode: true };
+  const result = await generateTextFromPrompt(prompt);
+  if (!result.mockMode && result.text.trim()) {
+    return { text: result.text, mockMode: false };
   }
+  return { text: fallbackText, mockMode: true };
 }
 
 /** Classify a Gemini SDK error into a safe code for client display. Never leaks raw secrets. */
@@ -233,4 +253,24 @@ function getGeminiErrorMeta(error: unknown) {
     statusText: maybeError.response?.statusText,
     apiMessage: maybeError.response?.data?.error?.message,
   };
+}
+
+function parseFallbackModels(raw: string | undefined): string[] {
+  const defaults = ["gemini-2.5-flash-lite"];
+  const source = raw?.trim() ? raw : defaults.join(",");
+  const values = source
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return Array.from(new Set(values));
+}
+
+function getModelsToTry(): string[] {
+  const all = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS];
+  return Array.from(new Set(all.filter(Boolean)));
+}
+
+function isRetryableModelError(error: unknown): boolean {
+  const { errorType } = classifyGeminiError(error);
+  return errorType === "QUOTA_EXCEEDED" || errorType === "MODEL_NOT_FOUND";
 }

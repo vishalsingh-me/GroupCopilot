@@ -52,6 +52,15 @@ export async function GET(
       }))
     });
   } catch (error) {
+    if (isMissingConversationThreadTable(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "Conversation threads are not available yet. Run `npx prisma migrate deploy` to apply the latest schema.",
+        },
+        { status: 503 }
+      );
+    }
     if (error instanceof Error && error.message === "THREAD_NOT_FOUND") {
       return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
     }
@@ -95,10 +104,29 @@ export async function POST(
         { status: 400 }
       );
     }
+    if (isMissingConversationThreadTable(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "Conversation threads are not available yet. Run `npx prisma migrate deploy` to apply the latest schema.",
+        },
+        { status: 503 }
+      );
+    }
     if (error instanceof Error && error.message === "THREAD_NOT_FOUND") {
       return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
     }
     console.error(error);
     return NextResponse.json({ error: "Unable to save message" }, { status: 400 });
   }
+}
+
+function isMissingConversationThreadTable(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const maybe = error as { code?: string; meta?: { table?: string; modelName?: string } };
+  return (
+    maybe.code === "P2021" &&
+    (maybe.meta?.table === "public.ConversationThread" ||
+      maybe.meta?.modelName === "ConversationThread")
+  );
 }

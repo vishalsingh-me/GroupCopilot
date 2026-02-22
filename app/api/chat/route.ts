@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { requireRoomMember } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import {
@@ -7,11 +8,14 @@ import {
   ensureRoomThread,
   touchConversationThread,
 } from "@/lib/chat/threads";
-import { generatePlanCopilotReply } from "@/lib/llm/gemini";
+import { generatePlanCopilotReply, generateTextFromPrompt } from "@/lib/llm/gemini";
 import type {
   PlanCopilotHistoryItem,
   PlanCopilotRoomContext,
 } from "@/lib/llm/prompts/planCopilot";
+import { looksLikeConflictMessage } from "@/lib/prompts/mediator/detect";
+import { buildConflictPrompt, type ConflictPromptHistoryItem } from "@/lib/prompts/mediator/build";
+import { safeParseConflictResponse } from "@/lib/prompts/mediator/zod";
 
 const ChatSchema = z.object({
   roomCode: z.string().trim().min(4),
@@ -56,14 +60,66 @@ export async function POST(request: Request) {
     });
     await touchConversationThread(thread.id, userMessage.createdAt);
 
-    let llmResult;
+    const shouldUseConflictMediator = looksLikeConflictMessage(body.message);
+
+    let llmResult: { text: string; mockMode: boolean; metadata?: Prisma.InputJsonValue };
     try {
-      llmResult = await generatePlanCopilotReply({
-        message: body.message,
-        history: mapHistoryForPrompt(historyMessages),
-        roomContext,
-        threadSummary: thread.summary,
-      });
+      if (shouldUseConflictMediator) {
+        const conflictPrompt = buildConflictPrompt({
+          userMessage: body.message,
+          history: mapHistoryForConflictPrompt(historyMessages),
+          retrievedChunks: [],
+          teamContext: {
+            roomName: roomContext.roomName ?? undefined,
+            members: roomContext.members,
+          },
+        });
+
+        const generation = await generateTextFromPrompt(conflictPrompt);
+        const parsed = generation.mockMode ? null : safeParseConflictResponse(generation.text);
+
+        if (parsed?.ok) {
+          const conflict = parsed.data;
+          const isSafetyEscalation =
+            conflict.status === "safety_escalation" || conflict.safety.risk_level === "high";
+          llmResult = {
+            text: isSafetyEscalation
+              ? conflict.safety.escalation_message || conflict.neutral_summary
+              : conflict.neutral_summary,
+            mockMode: generation.mockMode,
+            metadata: toPrismaJson({
+              kind: "conflict_mediation",
+              conflict,
+              conflictCard: {
+                neutralSummary: conflict.neutral_summary,
+                clarifyingQuestions: conflict.clarifying_questions,
+                options: conflict.options.map((option) => ({
+                  title: option.title,
+                  description: option.description,
+                })),
+                suggestedScript: conflict.suggested_script.text,
+                nextQuestion: conflict.follow_up.next_question,
+                confidence: conflict.confidence,
+              },
+            }),
+          };
+        } else {
+          // If the mediator JSON contract fails, fall back to Plan Copilot text mode.
+          llmResult = await generatePlanCopilotReply({
+            message: body.message,
+            history: mapHistoryForPrompt(historyMessages),
+            roomContext,
+            threadSummary: thread.summary,
+          });
+        }
+      } else {
+        llmResult = await generatePlanCopilotReply({
+          message: body.message,
+          history: mapHistoryForPrompt(historyMessages),
+          roomContext,
+          threadSummary: thread.summary,
+        });
+      }
     } catch (error) {
       console.error("[chat] Gemini call failed", error);
       llmResult = {
@@ -81,6 +137,7 @@ export async function POST(request: Request) {
         senderUserId: null,
         content: assistantText,
         mode: DEFAULT_MESSAGE_MODE,
+        metadata: llmResult.metadata,
       },
     });
     await touchConversationThread(thread.id, assistantMessage.createdAt);
@@ -92,6 +149,15 @@ export async function POST(request: Request) {
       mockMode: llmResult.mockMode,
     });
   } catch (error) {
+    if (isMissingConversationThreadTable(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "Conversation threads are not available yet. Run `npx prisma migrate deploy` to apply the latest schema.",
+        },
+        { status: 503 }
+      );
+    }
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: { code: "VALIDATION_ERROR", issues: error.issues } },
@@ -216,6 +282,24 @@ function mapHistoryForPrompt(
     }));
 }
 
+function mapHistoryForConflictPrompt(
+  messages: Array<{
+    senderType: "user" | "assistant" | "system" | "tool";
+    content: string;
+    senderUser: { name: string | null; email: string } | null;
+  }>
+): ConflictPromptHistoryItem[] {
+  return messages
+    .slice()
+    .reverse()
+    .filter((message) => message.senderType === "user" || message.senderType === "assistant")
+    .map((message) => ({
+      role: message.senderType === "assistant" ? "assistant" : "user",
+      name: message.senderUser?.name ?? message.senderUser?.email ?? undefined,
+      content: message.content,
+    }));
+}
+
 async function maybeRefreshThreadSummary(roomId: string, threadId: string) {
   const userMessageCount = await prisma.message.count({
     where: {
@@ -284,4 +368,18 @@ function trimForSummary(value: string): string {
     return cleaned;
   }
   return `${cleaned.slice(0, 177)}...`;
+}
+
+function isMissingConversationThreadTable(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const maybe = error as { code?: string; meta?: { table?: string; modelName?: string } };
+  return (
+    maybe.code === "P2021" &&
+    (maybe.meta?.table === "public.ConversationThread" ||
+      maybe.meta?.modelName === "ConversationThread")
+  );
+}
+
+function toPrismaJson(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
