@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SenderType {
+  user
+  assistant
+  system
+  tool
+}
+
+enum Mode {
+  brainstorm
+  clarify
+  tickets
+  schedule
+  conflict
+}
+
+enum TicketPriority {
+  low
+  med
+  high
+}
+
+enum TicketEffort {
+  S
+  M
+  L
+}
+
+enum TicketStatus {
+  todo
+  doing
+  done
+}
+
+enum ToolActionType {
+  notion_create_task
+  calendar_create_event
+}
+
+enum ToolActionStatus {
+  pending
+  success
+  error
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  image     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  rooms     RoomMember[]
+  messages  Message[]
+  ticketsOwned Ticket[] @relation("TicketOwner")
+  ticketsSuggested Ticket[] @relation("TicketSuggestedOwner")
+  toolActions ToolAction[] @relation("ToolActionRequester")
+}
+
+model Room {
+  id        String        @id @default(cuid())
+  code      String        @unique
+  name      String?
+  createdAt DateTime      @default(now())
+  members   RoomMember[]
+  messages  Message[]
+  tickets   Ticket[]
+  toolActions ToolAction[]
+}
+
+model RoomMember {
+  id       String   @id @default(cuid())
+  room     Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId   String
+  role     String?
+  joinedAt DateTime @default(now())
+
+  @@unique([roomId, userId])
+}
+
+model Message {
+  id           String     @id @default(cuid())
+  room         Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId       String
+  senderType   SenderType
+  senderUser   User?      @relation(fields: [senderUserId], references: [id], onDelete: SetNull)
+  senderUserId String?
+  content      String
+  mode         Mode
+  metadata     Json?
+  createdAt    DateTime   @default(now())
+}
+
+model Ticket {
+  id                   String      @id @default(cuid())
+  room                 Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId               String
+  title                String
+  description          String
+  suggestedOwnerUser   User?       @relation("TicketSuggestedOwner", fields: [suggestedOwnerUserId], references: [id], onDelete: SetNull)
+  suggestedOwnerUserId String?
+  ownerUser            User?       @relation("TicketOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  ownerUserId          String?
+  priority             TicketPriority
+  effort               TicketEffort
+  status               TicketStatus @default(todo)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+}
+
+model ToolAction {
+  id                 String            @id @default(cuid())
+  room               Room              @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId             String
+  type               ToolActionType
+  requestedBy        User?             @relation("ToolActionRequester", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  requestedByUserId  String?
+  payload            Json
+  status             ToolActionStatus  @default(pending)
+  result             Json?
+  confirmedAt        DateTime?
+  createdAt          DateTime          @default(now())
+}
