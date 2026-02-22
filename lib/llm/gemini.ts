@@ -8,16 +8,25 @@ import {
   type MockReason,
   type TicketSuggestion
 } from "./mock";
-
-type HistoryMessage = {
-  role: "user" | "assistant";
-  content: string;
-};
+import {
+  buildConflictPrompt,
+  type ConflictPromptHistoryItem,
+  type ConflictRetrievedChunk,
+  type ConflictTeamContext
+} from "@/lib/prompts/mediator/build";
 
 type GenerateArgs = {
   mode: Mode;
   message: string;
-  history?: HistoryMessage[];
+  history?: ConflictPromptHistoryItem[];
+  retrievedChunks?: ConflictRetrievedChunk[];
+  teamContext?: ConflictTeamContext;
+};
+
+export type PromptGenerationResult = {
+  text: string;
+  mockMode: boolean;
+  reason?: MockReason;
 };
 
 const GEMINI_MODEL = "gemini-2.5-flash";
@@ -66,6 +75,38 @@ type GeminiResponseLike = {
 };
 
 export async function generateAssistantReply(args: GenerateArgs): Promise<GenerateResult> {
+  const prompt = args.mode === "conflict"
+    ? buildConflictPrompt({
+      userMessage: args.message,
+      history: args.history ?? [],
+      retrievedChunks: args.retrievedChunks ?? [],
+      teamContext: args.teamContext
+    })
+    : buildPrompt(args.mode, args.message, args.history ?? []);
+
+  const generation = await generateTextFromPrompt(prompt);
+  if (generation.mockMode) {
+    return generateMockReply({
+      mode: args.mode,
+      message: args.message,
+      reason: generation.reason ?? "gemini_error"
+    });
+  }
+
+  if (args.mode === "conflict") {
+    return { text: generation.text, mockMode: false };
+  }
+
+  const artifacts = extractArtifacts(args.mode, generation.text);
+  const finalText = normalizeFinalText(generation.text, args.mode, artifacts);
+  return {
+    text: finalText,
+    artifacts,
+    mockMode: false
+  };
+}
+
+export async function generateTextFromPrompt(prompt: string): Promise<PromptGenerationResult> {
   const apiKey = (process.env.GEMINI_API_KEY ?? "").trim();
   if (isDev) {
     console.log("[llm] GEMINI_API_KEY length:", apiKey.length, "empty:", apiKey.length === 0);
@@ -73,58 +114,45 @@ export async function generateAssistantReply(args: GenerateArgs): Promise<Genera
   }
 
   if (!apiKey) {
-    return fallback(args, "missing_key", "Gemini disabled (missing key)");
+    if (isDev) {
+      console.log("[llm] Gemini disabled (missing key)");
+    }
+    return { text: "", mockMode: true, reason: "missing_key" };
   }
 
   try {
     const client = new GoogleGenerativeAI(apiKey);
     const model = client.getGenerativeModel({ model: GEMINI_MODEL });
-    const prompt = buildPrompt(args.mode, args.message, args.history ?? []);
     const generation = await model.generateContent(prompt);
     const response = generation.response as GeminiResponseLike;
 
     if (response?.promptFeedback?.blockReason) {
-      return fallback(args, "blocked_response", "Gemini blocked response by prompt feedback");
+      if (isDev) {
+        console.log("[llm] Gemini blocked response", response.promptFeedback.blockReason);
+      }
+      return { text: "", mockMode: true, reason: "blocked_response" };
     }
 
     const text = extractText(response);
-    const artifacts = extractArtifacts(args.mode, text);
-    if (!text && !artifacts) {
+    if (!text) {
       const hasCandidates = Boolean(response?.candidates?.length);
-      return fallback(
-        args,
-        hasCandidates ? "invalid_response" : "empty_response",
-        "Gemini returned no usable text/artifacts"
-      );
+      return {
+        text: "",
+        mockMode: true,
+        reason: hasCandidates ? "invalid_response" : "empty_response"
+      };
     }
 
-    const finalText = normalizeFinalText(text, args.mode, artifacts);
-    if (isDev) {
-      console.log("[llm] Gemini success", {
-        mockMode: false,
-        hasText: finalText.length > 0,
-        hasArtifacts: Boolean(artifacts),
-        candidateCount: response?.candidates?.length ?? 0
-      });
-    }
-
-    return { text: finalText, artifacts, mockMode: false };
+    return { text, mockMode: false };
   } catch (error) {
     if (isDev) {
-      console.error("[llm] Gemini error (exception) -> mock", getGeminiErrorMeta(error));
+      console.error("[llm] Gemini error (exception)", getGeminiErrorMeta(error));
     }
-    return generateMockReply({ ...args, reason: "gemini_error" });
+    return { text: "", mockMode: true, reason: "gemini_error" };
   }
 }
 
-function fallback(args: GenerateArgs, reason: MockReason, message: string): Promise<GenerateResult> {
-  if (isDev) {
-    console.log(`[llm] ${message} -> mock`, { reason });
-  }
-  return generateMockReply({ ...args, reason });
-}
-
-function buildPrompt(mode: Mode, message: string, history: HistoryMessage[]) {
+function buildPrompt(mode: Mode, message: string, history: ConflictPromptHistoryItem[]) {
   const modeGuidance: Record<Mode, string> = {
     brainstorm: "Brainstorm mode: ask one relevant next question at a time and move the idea forward.",
     clarify: "Clarify mode: gather constraints, deadlines, and success criteria before proposing actions.",
@@ -137,7 +165,14 @@ function buildPrompt(mode: Mode, message: string, history: HistoryMessage[]) {
     ? "No prior messages."
     : history
       .slice(-20)
-      .map((entry) => `${entry.role === "user" ? "User" : "Assistant"}: ${entry.content}`)
+      .map((entry) => {
+        const speaker = entry.name?.trim()
+          ? `${entry.role === "user" ? "User" : "Assistant"}(${entry.name})`
+          : entry.role === "user"
+            ? "User"
+            : "Assistant";
+        return `${speaker}: ${entry.content}`;
+      })
       .join("\n");
 
   const shortUserMessage = isShortUserMessage(message);
@@ -325,11 +360,7 @@ function normalizeSchedulePayload(payload: unknown) {
   return item;
 }
 
-function normalizeFinalText(
-  text: string,
-  mode: Mode,
-  artifacts: GenerateResult["artifacts"]
-) {
+function normalizeFinalText(text: string, mode: Mode, artifacts: GenerateResult["artifacts"]) {
   const clean = stripJsonBlocks(text).trim();
   if (clean) {
     return clean.slice(0, MAX_REPLY_CHARS);
@@ -394,3 +425,4 @@ function getGeminiErrorMeta(error: unknown) {
     apiMessage: maybeError.response?.data?.error?.message
   };
 }
+
