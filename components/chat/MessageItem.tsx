@@ -20,6 +20,7 @@ export default function MessageItem({ message }: MessageItemProps) {
   const isAssistant = message.role === "assistant";
   const isSystem = message.role === "system";
   const isTool = message.role === "tool";
+  const isTranscriptMessage = isUser || isAssistant;
   const sender = isAssistant ? "Assistant" : message.sender;
   const timestamp = message.timestamp ?? message.createdAt;
 
@@ -51,7 +52,17 @@ export default function MessageItem({ message }: MessageItemProps) {
             isTool && "rounded-xl border border-border bg-card px-3 py-2 text-foreground"
           )}
         >
-          {conflictCard ? <ConflictCard data={conflictCard} /> : content}
+          {conflictCard ? (
+            <ConflictCard data={conflictCard} />
+          ) : (
+            <p
+              className={cn(
+                isTranscriptMessage && "font-chatSerif text-[16px] leading-7 tracking-normal sm:text-[17px]"
+              )}
+            >
+              {content}
+            </p>
+          )}
         </div>
         {isLong && !conflictCard ? (
           <button
