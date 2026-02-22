@@ -54,6 +54,12 @@ enum VoteChoice {
   request_change
 }
 
+enum ProjectCadence {
+  daily
+  weekly
+  monthly
+}
+
 // ─── Core Tables ─────────────────────────────────────────────────────────────
 
 model User {
@@ -68,6 +74,7 @@ model User {
   messages      Message[]
   approvalVotes ApprovalVote[]
   auditLogs     AuditLog[]
+  createdPlans  ProjectPlan[]
 }
 
 model Room {
@@ -86,6 +93,9 @@ model Room {
   auditLogs        AuditLog[]
   healthSnapshots  HealthSnapshot[]
   trelloCardCache  TrelloCardCache[]
+  projectPlan      ProjectPlan?
+  milestones       Milestone[]
+  checkInEvents    CheckInEvent[]
 }
 
 model RoomMember {
@@ -205,4 +215,53 @@ model TrelloCardCache {
   status        String    // Trello list name (e.g. "To Do", "In Progress", "Done")
   dueDate       DateTime?
   lastSyncedAt  DateTime  @default(now())
+}
+
+// ─── Project Planner ──────────────────────────────────────────────────────────
+
+model ProjectPlan {
+  id              String         @id @default(cuid())
+  room            Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId          String         @unique
+  title           String
+  description     String
+  deadlineAt      DateTime
+  cadence         ProjectCadence
+  checkInTime     String         // "HH:MM"
+  timezone        String
+  createdByUser   User           @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdByUserId String
+  milestones      Milestone[]
+  checkInEvents   CheckInEvent[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model Milestone {
+  id        String      @id @default(cuid())
+  room      Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId    String
+  plan      ProjectPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId    String
+  index     Int
+  title     String
+  startAt   DateTime
+  dueAt     DateTime
+  checkInEvents CheckInEvent[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@unique([planId, index])
+}
+
+model CheckInEvent {
+  id          String      @id @default(cuid())
+  room        Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId      String
+  plan        ProjectPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId      String
+  milestone   Milestone   @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  milestoneId String      @unique
+  scheduledAt DateTime
+  createdAt   DateTime    @default(now())
 }

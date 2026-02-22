@@ -156,7 +156,11 @@ async function handleSkeletonDraft(args: DispatchArgs): Promise<DispatchResult> 
     };
   }
 
-  return { text: `${gate1Message(milestones)}\n\n${qaResult.text}`, mockMode, newState: "SKELETON_QA" };
+  return {
+    text: qaResult.text,
+    mockMode: mockMode || qaResult.mockMode,
+    newState: "SKELETON_QA",
+  };
 }
 
 async function handleSkeletonQA(args: DispatchArgs): Promise<DispatchResult> {
@@ -164,9 +168,21 @@ async function handleSkeletonQA(args: DispatchArgs): Promise<DispatchResult> {
   const data = args.session.data as SessionData;
   const skeleton = data.skeletonDraft ?? [];
   const priorAnswers = data.qaAnswers ?? {};
+  const priorQuestions = data.skeletonQuestions ?? [];
+
+  const pendingQuestion = [...priorQuestions].reverse().find((question) => !priorAnswers[question]);
+  const trimmedMessage = args.userMessage.trim();
+  const nextAnswers =
+    pendingQuestion && trimmedMessage.length > 0
+      ? { ...priorAnswers, [pendingQuestion]: trimmedMessage }
+      : priorAnswers;
+
+  if (nextAnswers !== priorAnswers) {
+    await patchSessionData(args.session.id, { qaAnswers: nextAnswers });
+  }
 
   const { text, mockMode } = await generateFromPrompt(
-    skeletonQAPrompt(ctx, skeleton, priorAnswers),
+    skeletonQAPrompt(ctx, skeleton, nextAnswers),
     JSON.stringify({ done: true })
   );
 
@@ -185,6 +201,12 @@ async function handleSkeletonQA(args: DispatchArgs): Promise<DispatchResult> {
       };
     }
     if (parsed.question) {
+      if (!priorQuestions.includes(parsed.question)) {
+        await patchSessionData(args.session.id, {
+          skeletonQuestions: [...priorQuestions, parsed.question],
+          qaAnswers: nextAnswers,
+        });
+      }
       return { text: parsed.question, mockMode, newState: "SKELETON_QA" };
     }
   } catch {

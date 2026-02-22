@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
 import { z } from "zod";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireSessionUser } from "@/lib/auth-helpers";
 import { TRELLO_MVP_BOARD_ID, TRELLO_MVP_PUBLISH_LIST_ID } from "@/lib/trello/config";
+
+const isDev = process.env.NODE_ENV !== "production";
 
 const CreateRoomSchema = z.object({
   name: z.string().trim().max(100).optional()
@@ -19,6 +23,17 @@ function generateRoomCode() {
 
 export async function POST(req: Request) {
   try {
+    if (isDev) {
+      const session = await getServerSession(authOptions);
+      console.log("[rooms/create] auth context", {
+        hasSession: Boolean(session),
+        email: session?.user?.email ?? null,
+        host: req.headers.get("host"),
+        origin: req.headers.get("origin"),
+        referer: req.headers.get("referer"),
+      });
+    }
+
     const { user } = await requireSessionUser();
     const body = CreateRoomSchema.parse(await req.json());
 
@@ -88,7 +103,28 @@ export async function POST(req: Request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Unable to create room" }, { status: 400 });
+    console.error("[rooms/create] error", {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return NextResponse.json(
+        { ok: false, error: "UNAUTHORIZED", message: "Not signed in." },
+        { status: 401 }
+      );
+    }
+
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { ok: false, error: "VALIDATION_ERROR", message: "Invalid room payload.", issues: error.issues },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json(
+      { ok: false, error: "INTERNAL_ERROR", message: "Unable to create room" },
+      { status: 500 }
+    );
   }
 }

@@ -21,6 +21,8 @@ import { GEMINI_MODEL, getApiKey, classifyGeminiError } from "@/lib/llm/gemini";
 
 export async function GET() {
   const apiKey = getApiKey();
+  const nonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const expectedReply = `pong-${nonce}`;
 
   if (!apiKey) {
     return NextResponse.json({
@@ -38,11 +40,11 @@ export async function GET() {
   const t0 = Date.now();
   try {
     const result = await client.generateContent({
-      contents: [{ role: "user", parts: [{ text: 'Reply with exactly the word: pong' }] }],
+      contents: [{ role: "user", parts: [{ text: `Reply with exactly: ${expectedReply}` }] }],
       generationConfig: { maxOutputTokens: 5, temperature: 0 },
     });
 
-    const text = result.response.text().trim().toLowerCase();
+    const text = result.response.text().trim();
     const latencyMs = Date.now() - t0;
 
     // Accept "pong" or any short response — the point is that the API returned
@@ -64,6 +66,8 @@ export async function GET() {
       latencyMs,
       errorType: null,
       errorMessageSafe: null,
+      responsePreview: text.slice(0, 50),
+      expectedReply,
     });
   } catch (error) {
     const latencyMs = Date.now() - t0;

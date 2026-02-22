@@ -27,19 +27,22 @@ export default function Sidebar({ className }: { className?: string }) {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
   const roomPath = room ? `/room/${room.code}` : "/room";
+  const chatPath = `${roomPath}/chat`;
+  const panelBasePath = pathname === chatPath ? chatPath : roomPath;
   const activePanel = searchParams.get("panel");
 
   const navItems: NavItem[] = [
-    { label: "Chat", href: roomPath, panel: null },
+    { label: "Home", href: roomPath, panel: null },
+    { label: "Chat", href: chatPath, panel: null },
     {
       label: "Trello",
       href: TRELLO_MVP_BOARD_URL,
       external: true,
       title: "Open Trello board"
     },
-    { label: "Tickets", href: `${roomPath}?panel=tickets`, panel: "tickets" },
-    { label: "Meetings", href: `${roomPath}?panel=meetings`, panel: "meetings" },
-    { label: "Guide", href: `${roomPath}?panel=guide`, panel: "guide" },
+    { label: "Tickets", href: `${panelBasePath}?panel=tickets`, panel: "tickets" },
+    { label: "Meetings", href: `${panelBasePath}?panel=meetings`, panel: "meetings" },
+    { label: "Guide", href: `${panelBasePath}?panel=guide`, panel: "guide" },
     { label: "Settings", href: "/settings" }
   ];
 
@@ -89,7 +92,7 @@ export default function Sidebar({ className }: { className?: string }) {
             ? false
             : item.panel !== undefined
               ? item.panel
-                ? pathname === roomPath && activePanel === item.panel
+                ? pathname === panelBasePath && activePanel === item.panel
                 : pathname === item.href && activePanel === null
               : pathname === item.href;
 
