@@ -31,7 +31,7 @@ export default function MessageItem({ message }: MessageItemProps) {
           {message.role === "system" ? <Badge variant="outline">System</Badge> : null}
         </div>
         <span className="text-xs text-muted-foreground">
-          {new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          {message.timestamp ? new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
         </span>
       </div>
       <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">{content}</p>

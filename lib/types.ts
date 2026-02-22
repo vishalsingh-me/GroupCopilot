@@ -1,3 +1,5 @@
+export type Profile = { name: string; role?: string; };
+
 export type Mode = "brainstorm" | "clarify" | "tickets" | "schedule" | "conflict";
 
 export type MessageRole = "assistant" | "user" | "system" | "tool";

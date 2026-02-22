@@ -4,10 +4,11 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(
   _req: Request,
-  { params }: { params: { code: string } }
+  { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { room } = await requireRoomMember(params.code.toUpperCase());
+    const { code } = await params;
+    const { room } = await requireRoomMember(code.toUpperCase());
     const detailed = await prisma.room.findUnique({
       where: { id: room.id },
       include: {

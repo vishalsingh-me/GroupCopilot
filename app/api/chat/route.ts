@@ -27,7 +27,7 @@ export async function POST(request: Request) {
         senderUserId: null,
         content: result.text,
         mode: body.mode,
-        metadata: result.artifacts ?? null
+        metadata: result.artifacts ? JSON.parse(JSON.stringify(result.artifacts)) : null
       }
     });
 

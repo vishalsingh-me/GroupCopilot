@@ -20,7 +20,7 @@ export const authOptions: NextAuthOptions = {
       if (account && profile && profile.email) {
         token.email = profile.email as string;
         token.name = (profile.name as string | undefined) ?? token.name;
-        token.picture = (profile.picture as string | undefined) ?? token.picture;
+        token.picture = ((profile as Record<string, unknown>).picture as string | undefined) ?? token.picture;
         token.sub = token.sub ?? (profile.sub as string | undefined) ?? account.providerAccountId;
       }
       return token;

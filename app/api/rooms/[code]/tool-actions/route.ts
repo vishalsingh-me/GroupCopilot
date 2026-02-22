@@ -13,10 +13,11 @@ const CreateActionSchema = z.object({
 
 export async function GET(
   _req: Request,
-  { params }: { params: { code: string } }
+  { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { room } = await requireRoomMember(params.code.toUpperCase());
+    const { code } = await params;
+    const { room } = await requireRoomMember(code.toUpperCase());
     const actions = await prisma.toolAction.findMany({
       where: { roomId: room.id },
       orderBy: { createdAt: "desc" }
@@ -30,10 +31,11 @@ export async function GET(
 
 export async function POST(
   req: Request,
-  { params }: { params: { code: string } }
+  { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { user, room } = await requireRoomMember(params.code.toUpperCase());
+    const { code } = await params;
+    const { user, room } = await requireRoomMember(code.toUpperCase());
     const body = CreateActionSchema.parse(await req.json());
 
     const action = await prisma.toolAction.create({

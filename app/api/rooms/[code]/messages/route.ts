@@ -10,10 +10,11 @@ const MessageCreateSchema = z.object({
 
 export async function GET(
   _req: Request,
-  { params }: { params: { code: string } }
+  { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { room } = await requireRoomMember(params.code.toUpperCase());
+    const { code } = await params;
+    const { room } = await requireRoomMember(code.toUpperCase());
     const messages = await prisma.message.findMany({
       where: { roomId: room.id },
       orderBy: { createdAt: "asc" },
@@ -40,10 +41,11 @@ export async function GET(
 
 export async function POST(
   req: Request,
-  { params }: { params: { code: string } }
+  { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const { user, room } = await requireRoomMember(params.code.toUpperCase());
+    const { code } = await params;
+    const { user, room } = await requireRoomMember(code.toUpperCase());
     const body = MessageCreateSchema.parse(await req.json());
 
     const message = await prisma.message.create({

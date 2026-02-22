@@ -93,11 +93,14 @@ export default function RoomPage() {
       const data = await res.json();
       return data.messages as Message[];
     },
-    onSuccess: (fetched) => {
-      setMessages(fetched.map((m) => ({ ...m, timestamp: m.timestamp ?? m.createdAt })));
-    },
     enabled: !!session
   });
+
+  useEffect(() => {
+    if (messagesQuery.data) {
+      setMessages(messagesQuery.data.map((m) => ({ ...m, timestamp: m.timestamp ?? m.createdAt })));
+    }
+  }, [messagesQuery.data]);
 
   const sendMutation = useMutation({
     mutationFn: async (content: string) => {
