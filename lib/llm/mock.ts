@@ -1,8 +1,16 @@
 import type { Mode, TicketPriority, TicketEffort } from "@prisma/client";
 
+export type MockReason =
+  | "missing_key"
+  | "gemini_error"
+  | "empty_response"
+  | "blocked_response"
+  | "invalid_response";
+
 type GenerateArgs = {
   mode: Mode;
   message: string;
+  reason?: MockReason;
 };
 
 export type TicketSuggestion = {
@@ -28,19 +36,25 @@ export type GenerateResult = {
     meetingProposals?: MeetingProposal[];
   };
   mockMode: boolean;
+  reason?: MockReason;
 };
 
-export async function generateMockReply({ mode, message }: GenerateArgs): Promise<GenerateResult> {
+export async function generateMockReply({ mode, message, reason }: GenerateArgs): Promise<GenerateResult> {
+  const base = {
+    mockMode: true as const,
+    reason
+  };
+
   switch (mode) {
     case "brainstorm":
       return {
         text: `Let's brainstorm: 1) What's the success metric? 2) Who's involved? 3) Constraints? You said: "${message}".`,
-        mockMode: true
+        ...base
       };
     case "clarify":
       return {
         text: `Clarifying questions: deadline? scope? blockers? current status?`,
-        mockMode: true
+        ...base
       };
     case "tickets":
       return {
@@ -65,7 +79,7 @@ export async function generateMockReply({ mode, message }: GenerateArgs): Promis
             }
           ]
         },
-        mockMode: true
+        ...base
       };
     case "schedule":
       return {
@@ -80,14 +94,14 @@ export async function generateMockReply({ mode, message }: GenerateArgs): Promis
             }
           ]
         },
-        mockMode: true
+        ...base
       };
     case "conflict":
       return {
         text: "Acknowledging tension. Let's list needs and pick a script from the guide.",
-        mockMode: true
+        ...base
       };
     default:
-      return { text: `Thanks for sharing: ${message}`, mockMode: true };
+      return { text: `Thanks for sharing: ${message}`, ...base };
   }
 }
