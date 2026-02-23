@@ -9,7 +9,6 @@ import Topbar from "@/components/layout/Topbar";
 import RightPanel from "@/components/layout/RightPanel";
 import ProjectPlannerHome from "@/components/planner/ProjectPlannerHome";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
 import { useRoomStore } from "@/lib/store";
 
 function PanelParamReader({ onPanelDetected }: { onPanelDetected?: () => void }) {
@@ -53,20 +52,16 @@ export default function RoomHomePage() {
     enabled: status === "authenticated",
   });
 
-  if (status === "loading") {
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.replace("/");
+    }
+  }, [router, status]);
+
+  if (status !== "authenticated") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-sm text-muted-foreground">Loading your session...</p>
-      </div>
-    );
-  }
-
-  if (status === "unauthenticated") {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background p-6 text-center">
-        <p className="text-sm font-medium">You are not signed in.</p>
-        <p className="text-xs text-muted-foreground">Sign in to continue to this room.</p>
-        <Button onClick={() => router.push("/")}>Go to Sign In</Button>
+        <p className="text-sm text-muted-foreground">Checking your session...</p>
       </div>
     );
   }

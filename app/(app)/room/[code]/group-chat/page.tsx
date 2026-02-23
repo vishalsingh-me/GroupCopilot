@@ -10,7 +10,6 @@ import RightPanel from "@/components/layout/RightPanel";
 import Composer from "@/components/chat/Composer";
 import EmptyState from "@/components/common/EmptyState";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/common/use-toast";
 import { useRoomStore } from "@/lib/store";
 import type { Message } from "@/lib/types";
@@ -120,20 +119,16 @@ export default function GroupChatPage() {
     sendMutation.mutate(value);
   };
 
-  if (status === "loading") {
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.replace("/");
+    }
+  }, [router, status]);
+
+  if (status !== "authenticated") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-sm text-muted-foreground">Loading your session...</p>
-      </div>
-    );
-  }
-
-  if (status === "unauthenticated") {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background p-6 text-center">
-        <p className="text-sm font-medium">You are not signed in.</p>
-        <p className="text-xs text-muted-foreground">Sign in to continue to this room.</p>
-        <Button onClick={() => router.push("/")}>Go to Sign In</Button>
+        <p className="text-sm text-muted-foreground">Checking your session...</p>
       </div>
     );
   }

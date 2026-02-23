@@ -31,6 +31,8 @@ export default function MarketingPage() {
   const [roomName, setRoomName] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const getSignInCallbackUrl = () =>
+    typeof window === "undefined" ? "/" : `${window.location.origin}/`;
 
   const myRoomsQuery = useQuery({
     queryKey: ["my-rooms"],
@@ -50,7 +52,7 @@ export default function MarketingPage() {
       return false;
     }
     if (status === "unauthenticated") {
-      await signIn("google", { callbackUrl: "/" });
+      await signIn("google", { callbackUrl: getSignInCallbackUrl() });
       return false;
     }
     return true;
@@ -67,7 +69,7 @@ export default function MarketingPage() {
         body: JSON.stringify({ name: roomName || undefined })
       });
       if (response.status === 401) {
-        await signIn("google", { callbackUrl: "/" });
+        await signIn("google", { callbackUrl: getSignInCallbackUrl() });
         return;
       }
       if (!response.ok) {
@@ -97,7 +99,7 @@ export default function MarketingPage() {
         body: JSON.stringify({ code })
       });
       if (response.status === 401) {
-        await signIn("google", { callbackUrl: "/" });
+        await signIn("google", { callbackUrl: getSignInCallbackUrl() });
         return;
       }
       if (!response.ok) {

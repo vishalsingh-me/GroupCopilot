@@ -251,20 +251,16 @@ export default function RoomChatPage() {
     router.replace(`/room/${code}/chat?${nextParams.toString()}`);
   };
 
-  if (status === "loading") {
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.replace("/");
+    }
+  }, [router, status]);
+
+  if (status !== "authenticated") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-sm text-muted-foreground">Loading your session...</p>
-      </div>
-    );
-  }
-
-  if (status === "unauthenticated") {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background p-6 text-center">
-        <p className="text-sm font-medium">You are not signed in.</p>
-        <p className="text-xs text-muted-foreground">Sign in to continue to this room chat.</p>
-        <Button onClick={() => (window.location.href = "/")}>Go to Sign In</Button>
+        <p className="text-sm text-muted-foreground">Checking your session...</p>
       </div>
     );
   }
