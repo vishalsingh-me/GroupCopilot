@@ -33,10 +33,18 @@ export default function Sidebar({ className }: { className?: string }) {
   const chatPath = `${roomPath}/chat`;
   const panelBasePath = pathname === chatPath ? chatPath : roomPath;
   const activePanel = searchParams.get("panel");
+  const currentMember = room?.members.find(
+    (member) =>
+      member.email &&
+      session?.user?.email &&
+      member.email.toLowerCase() === session.user.email.toLowerCase()
+  );
+  const isRoomAdmin = currentMember?.role === "owner" || currentMember?.role === "admin";
 
   const navItems: NavItem[] = [
     { label: "Home", href: roomPath, panel: null },
     { label: "Chat", href: chatPath, panel: null },
+    ...(isRoomAdmin ? [{ label: "Tasks", href: `${roomPath}/tasks` }] : []),
     {
       label: "Trello",
       href: TRELLO_MVP_BOARD_URL,

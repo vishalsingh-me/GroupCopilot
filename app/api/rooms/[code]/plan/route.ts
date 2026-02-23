@@ -12,6 +12,7 @@ import {
 import { sendPlannerCalendarEmails } from "@/lib/email/planner";
 
 const isDev = process.env.NODE_ENV !== "production";
+const NO_STORE_HEADERS = { "Cache-Control": "no-store, max-age=0" };
 
 const SavePlanSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -54,7 +55,7 @@ function jsonError(
       message,
       ...extra,
     },
-    { status }
+    { status, headers: NO_STORE_HEADERS }
   );
 }
 
@@ -113,7 +114,10 @@ export async function GET(
     });
 
     if (!plan) {
-      return NextResponse.json({ plan: null, milestones: [], checkins: [] });
+      return NextResponse.json(
+        { plan: null, milestones: [], checkins: [] },
+        { headers: NO_STORE_HEADERS }
+      );
     }
 
     const [milestones, checkins] = await Promise.all([
@@ -127,16 +131,22 @@ export async function GET(
       }),
     ]);
 
-    return NextResponse.json({ plan, milestones, checkins });
+    return NextResponse.json(
+      { plan, milestones, checkins },
+      { headers: NO_STORE_HEADERS }
+    );
   } catch (error) {
     if (isPlannerTableMissing(error)) {
-      return NextResponse.json({
-        plan: null,
-        milestones: [],
-        checkins: [],
-        schemaNotReady: true,
-        message: "Project planner tables are not initialized yet.",
-      });
+      return NextResponse.json(
+        {
+          plan: null,
+          milestones: [],
+          checkins: [],
+          schemaNotReady: true,
+          message: "Project planner tables are not initialized yet.",
+        },
+        { headers: NO_STORE_HEADERS }
+      );
     }
     const authError = mapAuthError(error);
     if (authError) {
@@ -344,13 +354,16 @@ export async function POST(
       recipients: dedupedRecipients,
     });
 
-    return NextResponse.json({
-      ok: true,
-      message: "Project plan saved.",
-      emailStatus: emailResult.status,
-      warning: emailResult.warning,
-      ...saved,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        message: "Project plan saved.",
+        emailStatus: emailResult.status,
+        warning: emailResult.warning,
+        ...saved,
+      },
+      { headers: NO_STORE_HEADERS }
+    );
   } catch (error) {
     const authError = mapAuthError(error);
     if (authError) {
