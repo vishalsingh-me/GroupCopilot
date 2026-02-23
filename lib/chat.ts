@@ -1,14 +1,14 @@
 import { nanoid } from "@/lib/uuid";
-import type { Message, Mode } from "@/lib/types";
+import type { Message } from "@/lib/types";
 
-export function createMessage(role: Message["role"], sender: string, content: string, mode: Mode): Message {
+export function createMessage(role: Message["role"], sender: string, content: string): Message {
   const now = new Date().toISOString();
   return {
     id: nanoid(),
     role,
     sender,
     content,
-    mode,
+    mode: "brainstorm",
     createdAt: now,
     timestamp: now
   };

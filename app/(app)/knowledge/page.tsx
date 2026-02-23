@@ -4,11 +4,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useRoomStore } from "@/lib/store";
 import { nanoid } from "@/lib/uuid";
 
+type KnowledgeItem = { id: string; title: string; content: string; createdAt: string };
+
 export default function KnowledgePage() {
-  const { knowledgeItems, setKnowledgeItems } = useRoomStore();
+  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [consent, setConsent] = useState(false);

@@ -1,88 +1,47 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
-import { useSession, signIn } from "next-auth/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useQuery } from "@tanstack/react-query";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 import RightPanel from "@/components/layout/RightPanel";
-import MessageList from "@/components/chat/MessageList";
-import Composer from "@/components/chat/Composer";
-import ModeChips from "@/components/chat/ModeChips";
-import EmptyState from "@/components/common/EmptyState";
-import ToolStatus from "@/components/integrations/ToolStatus";
+import ProjectPlannerHome from "@/components/planner/ProjectPlannerHome";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { useToast } from "@/components/common/use-toast";
-import { useRoomStore, createSystemMessage } from "@/lib/store";
-import { createMessage } from "@/lib/chat";
-import { normalizeMode } from "@/lib/types";
-import type { Mode, Message, MeetingProposal } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import { useRoomStore } from "@/lib/store";
 
-const modeDescriptions: Record<Mode, string> = {
-  brainstorm: "I will ask 3-5 questions, summarize options, and help you decide.",
-  clarify: "I will gather constraints before proposing actions.",
-  tickets: "I will propose ticket suggestions for acceptance.",
-  schedule: "I will propose meeting slots and ask clarifying questions.",
-  conflict: "I will use the conflict guide to propose scripts and steps."
-};
-
-function PanelParamReader() {
+function PanelParamReader({ onPanelDetected }: { onPanelDetected?: () => void }) {
   const searchParams = useSearchParams();
-  const { setPanelTab } = useRoomStore();
+  const panel = searchParams.get("panel");
+  const { panelTab, setPanelTab } = useRoomStore();
+
   useEffect(() => {
-    const panel = searchParams.get("panel");
-    if (panel === "tickets" || panel === "meetings" || panel === "guide" || panel === "activity") {
-      setPanelTab(panel as any);
+    if (panel === "plan" || panel === "trello" || panel === "guide" || panel === "activity") {
+      if (panel !== panelTab) {
+        setPanelTab(panel);
+      }
+      onPanelDetected?.();
     }
-  }, [searchParams, setPanelTab]);
+  }, [panel, panelTab, setPanelTab, onPanelDetected]);
+
   return null;
 }
 
-export default function RoomPage() {
+export default function RoomHomePage() {
   const params = useParams<{ code: string }>();
   const code = params.code;
+  const router = useRouter();
   const { data: session, status } = useSession();
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const {
-    room,
-    setRoom,
-    messages,
-    setMessages,
-    addMessage,
-    setMode,
-    mode,
-    setMeetingSlots,
-    toolActions
-  } = useRoomStore();
-  const currentMode = normalizeMode(mode);
+  const { room, setRoom } = useRoomStore();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [mockBanner, setMockBanner] = useState(false);
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  const [desktopPanelOpen, setDesktopPanelOpen] = useState(false);
+  const openDesktopPanel = useCallback(() => setDesktopPanelOpen(true), []);
 
-  useEffect(() => {
-    fetch("/api/status")
-      .then((res) => res.json())
-      .then((data) => setMockBanner(data.mockLLM || data.mockTools))
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      signIn("google", { callbackUrl: `/room/${code}` });
-    }
-  }, [status, code]);
-
-  useEffect(() => {
-    const normalized = normalizeMode(mode);
-    if (normalized !== mode) {
-      setMode(normalized);
-    }
-  }, [mode, setMode]);
-
-  const roomQuery = useQuery({
+  useQuery({
     queryKey: ["room", code],
     queryFn: async () => {
       const res = await fetch(`/api/rooms/${code}`);
@@ -91,79 +50,8 @@ export default function RoomPage() {
       setRoom(data.room);
       return data.room;
     },
-    enabled: !!session
+    enabled: status === "authenticated",
   });
-
-  const messagesQuery = useQuery({
-    queryKey: ["messages", code],
-    queryFn: async () => {
-      const res = await fetch(`/api/rooms/${code}/messages`);
-      if (!res.ok) throw new Error("Failed to load messages");
-      const data = await res.json();
-      return data.messages as Message[];
-    },
-    onSuccess: (fetched) => {
-      setMessages(fetched.map((m) => ({ ...m, timestamp: m.timestamp ?? m.createdAt })));
-    },
-    enabled: !!session
-  });
-
-  const sendMutation = useMutation({
-    mutationFn: async (content: string) => {
-      const saveRes = await fetch(`/api/rooms/${code}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, mode: currentMode })
-      });
-      if (!saveRes.ok) {
-        throw new Error("Failed to save message");
-      }
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomCode: code, message: content, mode: currentMode })
-      });
-      if (!res.ok) throw new Error("Assistant error");
-      return res.json() as Promise<{
-        assistantMessage: Message;
-        artifacts?: { meetingProposals?: MeetingProposal[]; tickets?: any[] };
-        mockMode?: boolean;
-      }>;
-    },
-    onSuccess: (data) => {
-      setMockBanner(Boolean(data.mockMode));
-      queryClient.invalidateQueries({ queryKey: ["messages", code] });
-      if (data.artifacts?.meetingProposals) {
-        setMeetingSlots(
-          data.artifacts.meetingProposals.map((slot, idx) => ({
-            ...slot,
-            id: slot.start ?? String(idx)
-          }))
-        );
-      }
-    },
-    onError: () => {
-      toast({ title: "Assistant unavailable", description: "Showing mock response." });
-      setMockBanner(true);
-    }
-  });
-
-  const handleSend = async (value: string) => {
-    if (!value.trim()) {
-      toast({ title: "Message is empty", description: "Write something before sending." });
-      return;
-    }
-    const userMessage = createMessage("user", session?.user?.name ?? "You", value, currentMode);
-    addMessage(userMessage);
-    await sendMutation.mutateAsync(value);
-  };
-
-  const handleModeChange = (nextMode: Mode, label: string) => {
-    setMode(nextMode);
-    addMessage(createSystemMessage(`Mode switched: ${label}. ${modeDescriptions[nextMode]}`, nextMode));
-  };
-
-  const listMessages = useMemo(() => messages, [messages]);
 
   if (status === "loading") {
     return (
@@ -173,44 +61,47 @@ export default function RoomPage() {
     );
   }
 
-  if (!session) {
-    return null;
+  if (status === "unauthenticated") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background p-6 text-center">
+        <p className="text-sm font-medium">You are not signed in.</p>
+        <p className="text-xs text-muted-foreground">Sign in to continue to this room.</p>
+        <Button onClick={() => router.push("/")}>Go to Sign In</Button>
+      </div>
+    );
   }
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <Suspense fallback={null}><PanelParamReader /></Suspense>
-      <Topbar onOpenSidebar={() => setSidebarOpen(true)} onOpenPanel={() => setPanelOpen(true)} />
-      {mockBanner ? (
-        <div className="bg-amber-100 px-4 py-2 text-sm text-amber-800">
-          Mock mode: GEMINI_API_KEY or MCP_SERVER_URL missing. Responses and tool calls are simulated.
-        </div>
-      ) : null}
-      <div className="flex flex-1 overflow-hidden">
+      <Suspense fallback={null}>
+        <PanelParamReader onPanelDetected={openDesktopPanel} />
+      </Suspense>
+
+      <Topbar
+        onOpenSidebar={() => setSidebarOpen(true)}
+        onTogglePanel={() => setDesktopPanelOpen((open) => !open)}
+        onOpenMobilePanel={() => setMobilePanelOpen(true)}
+        panelOpen={desktopPanelOpen}
+      />
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex flex-1 flex-col gap-4 overflow-hidden p-4 lg:p-6">
-          <div className="rounded-2xl border border-border bg-card/70 p-4 shadow-soft">
-            <div className="flex flex-col gap-2">
-              <ModeChips mode={currentMode} onChange={handleModeChange} />
-              <p className="text-sm text-muted-foreground">{modeDescriptions[currentMode]}</p>
+        <main className="flex min-h-0 flex-1 flex-col">
+          <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4 pb-4 pt-3">
+            <div className="flex-1 overflow-y-auto">
+              <ProjectPlannerHome
+                roomCode={code}
+                members={room?.members ?? []}
+                sessionEmail={session?.user?.email}
+                onOpenChat={() => router.push(`/room/${code}/chat`)}
+              />
             </div>
           </div>
-
-          {listMessages.length === 0 ? (
-            <EmptyState
-              title="Start by telling the assistant your goal"
-              description="Try Brainstorm mode if you want guided questions."
-              actionLabel="Try Brainstorm mode"
-              onAction={() => handleModeChange("brainstorm", "Brainstorm")}
-            />
-          ) : (
-            <MessageList messages={listMessages} />
-          )}
-
-          <Composer onSend={handleSend} disabled={sendMutation.isPending} />
-          <ToolStatus actions={toolActions} />
         </main>
-        <RightPanel />
+
+        {desktopPanelOpen ? (
+          <RightPanel className="hidden lg:flex" onClose={() => setDesktopPanelOpen(false)} />
+        ) : null}
       </div>
 
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
@@ -222,13 +113,13 @@ export default function RoomPage() {
         </SheetContent>
       </Sheet>
 
-      <Sheet open={panelOpen} onOpenChange={setPanelOpen}>
+      <Sheet open={mobilePanelOpen} onOpenChange={setMobilePanelOpen}>
         <SheetTrigger asChild>
           <div />
         </SheetTrigger>
         <SheetContent side="right" className="p-0">
           <div className="h-full">
-            <RightPanel className="flex w-full" />
+            <RightPanel className="flex h-full w-full" onClose={() => setMobilePanelOpen(false)} />
           </div>
         </SheetContent>
       </Sheet>

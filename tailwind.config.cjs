@@ -49,10 +49,11 @@ module.exports = {
       },
       fontFamily: {
         display: ["Space Grotesk", "ui-sans-serif", "system-ui"],
-        body: ["Source Sans 3", "ui-sans-serif", "system-ui"]
+        body: ["Source Sans 3", "ui-sans-serif", "system-ui"],
+        chatSerif: ["ui-serif", "Georgia", "Cambria", "\"Times New Roman\"", "Times", "serif"]
       },
       backgroundImage: {
-        "mesh-light": "radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.16), transparent 40%), radial-gradient(circle at 90% 10%, rgba(251, 191, 36, 0.2), transparent 40%), radial-gradient(circle at 50% 80%, rgba(16, 185, 129, 0.16), transparent 45%)",
+        "mesh-light": "radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.08), transparent 42%), radial-gradient(circle at 90% 10%, rgba(251, 191, 36, 0.1), transparent 42%), radial-gradient(circle at 50% 80%, rgba(16, 185, 129, 0.08), transparent 48%)",
         "mesh-dark": "radial-gradient(circle at 15% 20%, rgba(56, 189, 248, 0.16), transparent 45%), radial-gradient(circle at 85% 15%, rgba(251, 191, 36, 0.14), transparent 40%), radial-gradient(circle at 50% 85%, rgba(16, 185, 129, 0.12), transparent 45%)"
       }
     }
